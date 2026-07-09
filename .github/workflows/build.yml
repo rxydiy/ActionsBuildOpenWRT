@@ -1,9 +1,16 @@
 name: OpenWrt-immortalwrt版
 
 on:
-  #自动运行：每天早上6点
+  #自动运行：每天早上6点 北京时间06:00 = UTC22:00
   schedule:
     - cron: 0 22 * * *
+  # 仅修改指定文件才触发推送构建
+  push:
+    paths:
+      - OpenWrt-immortalwrt.config
+      - diy-part1.sh
+      - diy-part2.sh
+      - files/**
   #手动运行
   workflow_dispatch:
 
@@ -20,6 +27,8 @@ env:
   UPLOAD_WETRANSFER: false
   UPLOAD_RELEASE: false
   TZ: Asia/Shanghai
+  # 配置对比缓存文件
+  CONFIG_CACHE_REF: pkg_ref.txt
 
 jobs:
   build:
@@ -85,8 +94,20 @@ jobs:
         df -hT
         echo "=============================================================================="
 
-    - name: Checkout
+    - name: Checkout 拉取你仓库自定义文件
       uses: actions/checkout@v6
+
+    # 缓存编译目录与配置对比基准
+    - name: 恢复编译缓存
+      uses: actions/cache@v6
+      with:
+        path: |
+          openwrt/dl
+          openwrt/build_dir
+          openwrt/staging_dir
+          ${{ env.CONFIG_CACHE_REF }}
+        key: mt798x-6.6-build-${{ github.sha }}
+        restore-keys: mt798x-6.6-build-
 
     - name: Initialization environment
       env:
@@ -108,22 +129,18 @@ jobs:
         sudo timedatectl set-timezone "$TZ"
         sudo chown $USER:$GROUPS $GITHUB_WORKSPACE
 
-    - name: Clone source code
+    - name: Clone source code 拉取官方源码
       run: |
         git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: Load custom feeds
+    - name: 执行diy-part1（内置feeds update/install，解决golang被覆盖）
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+    # ===== 删除原有独立 Update feeds / Install feeds 步骤，已移入diy-part1.sh =====
 
     - name: Load custom configuration
       run: |
@@ -133,8 +150,40 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
+    # 提取插件配置，用于对比是否变更
+    - name: 提取插件配置用于变更检测
+      run: |
+        cd openwrt
+        grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config > ../current_pkg.txt
+
+    # 核心：判断是否需要编译
+    - name: 判断是否执行完整编译
+      id: judge_build
+      run: |
+        NEED_BUILD=0
+        # 定时任务 / 手动运行 强制编译
+        if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+          echo "⏰ 定时/手动触发，强制完整编译"
+          NEED_BUILD=1
+        else
+          # push触发：对比插件配置是否变化
+          if [ -f ${{ env.CONFIG_CACHE_REF }} ]; then
+            if diff -q current_pkg.txt ${{ env.CONFIG_CACHE_REF }}; then
+              echo "✅ 插件配置无变更，跳过下载与编译"
+            else
+              echo "⚠️ .config插件勾选变更，需要编译"
+              NEED_BUILD=1
+            fi
+          else
+            echo "ℹ️ 首次运行无缓存配置，执行编译"
+            NEED_BUILD=1
+          fi
+        fi
+        echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
+
     - name: Download package
       id: package
+      if: env.NEED_BUILD == '1'
       run: |
         cd openwrt
         make defconfig
@@ -144,6 +193,7 @@ jobs:
 
     - name: Compile the firmware
       id: compile
+      if: env.NEED_BUILD == '1'
       run: |
         cd openwrt
         echo -e "CPU $(nproc) thread"
@@ -154,20 +204,25 @@ jobs:
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
+    # 保存本次配置对比基准到缓存
+    - name: 更新配置缓存
+      if: env.NEED_BUILD == '1'
+      run: cp current_pkg.txt ${{ env.CONFIG_CACHE_REF }}
+
     - name: Check space usage
-      if: (!cancelled())
+      if: (!cancelled() && env.NEED_BUILD == '1')
       run: df -hT
 
     - name: Upload bin directory
       uses: actions/upload-artifact@v6
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
+      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' && env.NEED_BUILD == '1'
       with:
         name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: openwrt/bin
 
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled() && env.NEED_BUILD == '1'
       run: |
         cd openwrt/bin/targets/*/*
         rm -rf packages
@@ -176,14 +231,14 @@ jobs:
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@v6
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && !cancelled() && env.NEED_BUILD == '1'
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to cowtransfer
       id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled() && env.NEED_BUILD == '1'
       run: |
         curl -fsSL git.io/file-transfer | sh
         ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
@@ -192,7 +247,7 @@ jobs:
 
     - name: Upload firmware to WeTransfer
       id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled() && env.NEED_BUILD == '1'
       run: |
         curl -fsSL git.io/file-transfer | sh
         ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
@@ -201,7 +256,7 @@ jobs:
 
     - name: Generate release tag
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled() && env.NEED_BUILD == '1'
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
@@ -211,7 +266,7 @@ jobs:
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
-      if: steps.tag.outputs.status == 'success' && !cancelled()
+      if: steps.tag.outputs.status == 'success' && !cancelled() && env.NEED_BUILD == '1'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -230,7 +285,7 @@ jobs:
 
     - name: Remove old Releases
       uses: ophub/delete-releases-workflows@main
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled() && env.NEED_BUILD == '1'
       with:
         delete_releases: true
         releases_keep_latest: 5
