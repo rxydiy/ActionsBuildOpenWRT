@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+sudo apt install libfuse-dev 
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
+
 #!/bin/bash
 
 # 移除 openwrt feeds 自带的核心库
