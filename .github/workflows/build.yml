@@ -1,4 +1,4 @@
-name: ImmortalWrt MT798x 6.6 按需编译(diy脚本+自定义配置)
+name: ImmortalWrt MT798x 6.6 
 on:
   push:
     branches:
@@ -57,23 +57,23 @@ jobs:
             echo "⚠️ 无自定义.config，使用源码默认配置"
           fi
 
-      # 执行 diy-part1.sh 对应原custom-feeds.sh（添加第三方feeds源）
-      - name: 执行DIY Part1（添加feeds软件源）
+      # diy-part1.sh：下载/拉取第三方插件
+      - name: 执行DIY Part1 拉取第三方插件
         run: |
           if [ -f custom-files/diy-part1.sh ]; then
             chmod +x custom-files/diy-part1.sh
-            echo "🔧 执行 diy-part1.sh"
+            echo "🔧 执行 diy-part1.sh (拉取第三方插件)"
             bash custom-files/diy-part1.sh
           else
             echo "ℹ️ 未提供 diy-part1.sh，跳过"
           fi
 
-      # 执行 diy-part2.sh 对应原custom-packages.sh（拉取第三方插件包）
-      - name: 执行DIY Part2（拉取外部插件至package）
+      # diy-part2.sh：修改固件默认配置（LAN IP、时区、WiFi等）
+      - name: 执行DIY Part2 修改固件默认参数
         run: |
           if [ -f custom-files/diy-part2.sh ]; then
             chmod +x custom-files/diy-part2.sh
-            echo "🔧 执行 diy-part2.sh"
+            echo "🔧 执行 diy-part2.sh (修改路由默认配置)"
             bash custom-files/diy-part2.sh
           else
             echo "ℹ️ 未提供 diy-part2.sh，跳过"
