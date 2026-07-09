@@ -1,5 +1,9 @@
-name: ImmortalWrt MT798x 6.6 按需编译(diy脚本+自定义配置)
+name: ImmortalWrt MT798x 6.6
 on:
+  # 定时：北京时间 06:00 = UTC 前一日 22:00
+  schedule:
+    - cron: '0 22 * * *'
+  # 推送文件变更触发
   push:
     branches:
       - openwrt-24.10-6.6
