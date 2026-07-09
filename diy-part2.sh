@@ -1,12 +1,15 @@
 #!/bin/bash
 set -e
 
-# 删除冲突旧插件
-rm -rf package/luci-app-openclash
-rm -rf package/luci-app-passwall
+#!/bin/bash
 
-# 拉取第三方插件
-git clone https://github.com/vernesong/OpenClash package/luci-app-openclash
-git clone https://github.com/xiaorouji/openwrt-passwall package/luci-app-passwall
+# Modify default IP
+sed -i 's/192.168.1.1/192.168.123.1/g' package/base-files/files/bin/config_generate
 
-echo "✅ 第三方插件拉取完成"
+sudo apt install libfuse-dev 
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
+
+
+
+echo "✅ diy-part2 路由默认参数修改完成"
