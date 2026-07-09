@@ -15,6 +15,7 @@ rm -rf feeds/luci/applications/helloworld
 rm -rf feeds/luci/applications/luci-app-openclash
 rm -rf feeds/luci/applications/luci-app-openlist
 rm -rf feeds/packages/net/openlist
+rm -rf feeds/packages/net/mosdns
 
 # 替换高版本golang feeds包（核心）
 rm -rf feeds/packages/lang/golang
