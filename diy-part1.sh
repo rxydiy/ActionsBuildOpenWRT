@@ -2,7 +2,7 @@
 set -e
 FEEDS_CONF=feeds.conf.default
 
-# 替换高版本golang feeds包（解决mosdns/mympd编译失败）
+# 替换高版本golang ）
 rm -rf feeds/packages/lang/golang
 git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
 
