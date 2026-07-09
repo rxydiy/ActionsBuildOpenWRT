@@ -1,0 +1,150 @@
+name: ImmortalWrt MT798x 6.6 按需编译(diy脚本+自定义配置)
+on:
+  push:
+    branches:
+      - openwrt-24.10-6.6
+    paths:
+      - '.config'
+      - 'diy-part1.sh'
+      - 'diy-part2.sh'
+      - 'feeds/**'
+      - 'package/**'
+  workflow_dispatch:
+
+env:
+  CACHE_PREFIX: mt798x-6.6-build
+  CONFIG_REF: pkg_ref.txt
+  TARGET_BRANCH: openwrt-24.10-6.6
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取官方 ImmortalWrt MT798x 源码
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REPO_URL }}
+          ref: ${{ env.TARGET_BRANCH }}
+          fetch-depth: 1
+
+      # 拉取本仓库自定义文件(.config、diy脚本)
+      - name: 拉取本仓库自定义配置与DIY脚本
+        uses: actions/checkout@v4
+        with:
+          path: custom-files
+          fetch-depth: 1
+
+      # 恢复编译缓存
+      - name: 恢复缓存(dl/编译目录/配置基准)
+        uses: actions/cache@v4
+        with:
+          path: |
+            dl
+            build_dir
+            staging_dir
+            ${{ env.CONFIG_REF }}
+          key: ${{ env.CACHE_PREFIX }}-${{ github.sha }}
+          restore-keys: ${{ env.CACHE_PREFIX }}-
+
+      # 加载自定义 .config
+      - name: 加载自定义.config
+        run: |
+          if [ -f custom-files/.config ]; then
+            echo "✅ 使用自定义配置 custom-files/.config"
+            cp custom-files/.config .config
+          else
+            echo "⚠️ 无自定义.config，使用源码默认配置"
+          fi
+
+      # 执行 diy-part1.sh 对应原custom-feeds.sh（添加第三方feeds源）
+      - name: 执行DIY Part1（添加feeds软件源）
+        run: |
+          if [ -f custom-files/diy-part1.sh ]; then
+            chmod +x custom-files/diy-part1.sh
+            echo "🔧 执行 diy-part1.sh"
+            bash custom-files/diy-part1.sh
+          else
+            echo "ℹ️ 未提供 diy-part1.sh，跳过"
+          fi
+
+      # 执行 diy-part2.sh 对应原custom-packages.sh（拉取第三方插件包）
+      - name: 执行DIY Part2（拉取外部插件至package）
+        run: |
+          if [ -f custom-files/diy-part2.sh ]; then
+            chmod +x custom-files/diy-part2.sh
+            echo "🔧 执行 diy-part2.sh"
+            bash custom-files/diy-part2.sh
+          else
+            echo "ℹ️ 未提供 diy-part2.sh，跳过"
+          fi
+
+      # 提取插件开关用于对比变更
+      - name: 提取所有插件配置行
+        run: |
+          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config > current_pkg.txt
+
+      # 判断是否需要编译
+      - name: 判断是否触发编译
+        id: judge_build
+        run: |
+          NEED_BUILD=0
+          # diy脚本/插件源码改动强制编译
+          if git diff --quiet HEAD^ HEAD -- feeds/ package/ custom-files/; then
+            echo "✅ feeds/package/diy脚本无改动"
+          else
+            echo "⚠️ 检测到源码/diy脚本更新，强制编译"
+            NEED_BUILD=1
+          fi
+
+          # 无源码改动再对比 .config 插件勾选
+          if [ $NEED_BUILD -eq 0 ] && [ -f ${{ env.CONFIG_REF }} ]; then
+            if diff -q current_pkg.txt ${{ env.CONFIG_REF }}; then
+              echo "✅ 插件配置完全一致，跳过编译"
+            else
+              echo "⚠️ .config 插件增减变更，开始编译"
+              NEED_BUILD=1
+            fi
+          elif [ $NEED_BUILD -eq 0 ]; then
+            echo "ℹ️ 无历史缓存配置，首次编译"
+            NEED_BUILD=1
+          fi
+
+          echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
+
+      # 安装依赖
+      - name: 安装编译环境依赖
+        if: env.NEED_BUILD == 1
+        run: |
+          sudo apt update -y
+          sudo apt install -y build-essential gcc g++ flex bison gawk git wget curl unzip python3 python3-pip libssl-dev libncurses-dev
+
+      # 更新 feeds
+      - name: 更新 & 安装 feeds
+        if: env.NEED_BUILD == 1
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # 预下载源码包
+      - name: 预下载全部源码
+        if: env.NEED_BUILD == 1
+        run: make -j$(nproc) download
+
+      # 编译固件
+      - name: 编译 MT798x 6.6 固件
+        if: env.NEED_BUILD == 1
+        run: make -j$(nproc)
+
+      # 保存基准配置到缓存
+      - name: 更新配置对比基准
+        if: env.NEED_BUILD == 1
+        run: cp current_pkg.txt ${{ env.CONFIG_REF }}
+
+      # 上传固件成品
+      - name: 上传固件压缩包
+        if: env.NEED_BUILD == 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: MT798x-6.6-Firmware-${{ github.sha }}
+          path: bin/targets/
