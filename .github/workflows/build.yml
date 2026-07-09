@@ -1,4 +1,4 @@
-name: ImmortalWrt MT798x 6.6 
+name: ImmortalWrt MT798x 6.6 按需编译(diy脚本+自定义配置)
 on:
   push:
     branches:
@@ -15,7 +15,7 @@ env:
   CACHE_PREFIX: mt798x-6.6-build
   CONFIG_REF: pkg_ref.txt
   TARGET_BRANCH: openwrt-24.10-6.6
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+  REPO_OWNER_REPO: padavanonly/immortalwrt-mt798x-6.6
 
 jobs:
   build:
@@ -24,7 +24,8 @@ jobs:
       - name: 拉取官方 ImmortalWrt MT798x 源码
         uses: actions/checkout@v4
         with:
-          repository: ${{ env.REPO_URL }}
+          # 修复：仅填写 owner/repo，不要https完整链接
+          repository: ${{ env.REPO_OWNER_REPO }}
           ref: ${{ env.TARGET_BRANCH }}
           fetch-depth: 1
 
