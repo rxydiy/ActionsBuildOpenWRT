@@ -2,6 +2,9 @@
 set -e
 FEEDS_CONF=feeds.conf.default
 
+rm -rf feeds/packages/lang/golang
+git clone https://github.com/sbwml/packages_lang_golang -b 26.x feeds/packages/lang/golang
+
 # 替换完feeds文件立刻更新安装，不会被外部命令覆盖
 ./scripts/feeds update -a
 ./scripts/feeds install -a
