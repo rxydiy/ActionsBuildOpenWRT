@@ -130,8 +130,14 @@ jobs:
 
     - name: Clone source code 拉取官方ImmortalWrt源码
       run: |
-        rm -rf openwrt
-        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
+        if [ -d openwrt/.git ];then
+          cd openwrt
+          git fetch origin $REPO_BRANCH
+          git reset --hard origin/$REPO_BRANCH
+        else
+          git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
+        fi
+
 
 
     - name: 执行diy-part1.sh(替换golang+feeds更新安装)
