@@ -142,7 +142,7 @@ jobs:
         cd openwrt
         git rev-parse HEAD > ../${{ env.UPSTREAM_COMMIT_FILE }}
 
-    - name: 执行diy-part1.sh(替换golang+feeds更新安装)
+    - name: 执行diy-part1.sh(feeds更新安装)
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
