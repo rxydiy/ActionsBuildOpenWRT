@@ -132,6 +132,12 @@ jobs:
 
     - name: Clone / Update source code 拉取/更新上游源码
       run: |
+        if [ -d "openwrt" ]; then
+          if [ ! -d "openwrt/.git" ]; then
+            rm -rf openwrt
+          fi
+        fi
+
         if [ -d openwrt/.git ];then
           cd openwrt
           git fetch origin $REPO_BRANCH
@@ -141,6 +147,7 @@ jobs:
         fi
         cd openwrt
         git rev-parse HEAD > ../${{ env.UPSTREAM_COMMIT_FILE }}
+
 
     - name: 执行diy-part1.sh(feeds更新安装)
       run: |
