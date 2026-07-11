@@ -30,6 +30,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
     - name: Free Disk Space
       uses: endersonmenezes/free-disk-space@v3
@@ -46,7 +48,6 @@ jobs:
     - name: Checkout 拉取自定义文件
       uses: actions/checkout@v6
 
-    # 在Checkout之后再创建swap文件，避免目录清理冲突
     - name: 挂载4G Swap 缓解内存溢出
       run: |
         cd "$GITHUB_WORKSPACE"
@@ -273,7 +274,6 @@ jobs:
         delete_tags: true
         gh_token: ${{ secrets.GITHUB_TOKEN }}
 
-    # 优先卸载swap文件，解除文件占用，再让系统清理目录
     - name: Clean up swap
       if: always()
       run: |
