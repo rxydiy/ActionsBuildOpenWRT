@@ -80,7 +80,7 @@ jobs:
         sudo pvcreate "$LOOP_MNT" "$LOOP_ROOT"
         sudo vgcreate github "$LOOP_MNT" "$LOOP_ROOT"
         sudo lvcreate -n runner -l 100%FREE github
-        sudo mkfs.xfs -f -i sparse=0 -b size=4096 /dev/github/runner
+        sudo mkfs.xfs -f /dev/github/runner
         sudo mkdir -p /builder
         sudo mount /dev/github/runner /builder
         sudo rm -rf "${GITHUB_WORKSPACE:?}"
@@ -97,7 +97,7 @@ jobs:
     - name: Checkout 拉取自定义文件
       uses: actions/checkout@v6
 
-    # 缓存增加 old_commit.txt
+    # 缓存增加 ccache、old_commit.txt，加速toolchain编译
     - name: 恢复编译缓存
       uses: actions/cache@v6
       with:
@@ -105,6 +105,7 @@ jobs:
           openwrt/dl
           openwrt/build_dir
           openwrt/staging_dir
+          openwrt/.ccache
           ${{ env.CONFIG_CACHE_REF }}
           ${{ env.UPSTREAM_COMMIT_FILE }}
           old_commit.txt
@@ -130,6 +131,12 @@ jobs:
         /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
         sudo timedatectl set-timezone "$TZ"
         sudo chown $USER:$GROUPS $GITHUB_WORKSPACE
+
+    - name: Enable CCache
+      run: |
+        cd openwrt 2>/dev/null || true
+        echo "export CCACHE_DIR=$PWD/.ccache" >> $GITHUB_ENV
+        echo "export CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
 
     - name: Clone / Update source code 拉取/更新上游源码
       run: |
@@ -210,7 +217,7 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        make download -j$(($(nproc) * 3 / 2))
+        make download -j$(nproc)
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
 
@@ -220,8 +227,8 @@ jobs:
       run: |
         cd openwrt
         echo -e "CPU核心数: $(nproc)"
-        echo -e "编译线程: $(($(nproc) * 3 / 2))"
-        make -j$(($(nproc) * 3 / 2)) || make -j1 || make -j1 V=s
+        echo -e "编译线程: $(nproc)"
+        nice -n 10 make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
