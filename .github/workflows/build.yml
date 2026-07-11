@@ -43,6 +43,10 @@ jobs:
         remove_packages_one_command: true
         remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia* /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle* /usr/local/bin/azcopy /usr/share/kotlinc /usr/share/apache-maven-* /usr/local/share/gecko_driver /usr/share/lintian"
 
+    - name: Checkout 拉取自定义文件
+      uses: actions/checkout@v6
+
+    # 在Checkout之后再创建swap文件，避免目录清理冲突
     - name: 挂载4G Swap 缓解内存溢出
       run: |
         cd "$GITHUB_WORKSPACE"
@@ -52,9 +56,6 @@ jobs:
         sudo swapon swapfile
         echo 10 | sudo tee /proc/sys/vm/swappiness
         free -h
-
-    - name: Checkout 拉取自定义文件
-      uses: actions/checkout@v6
 
     - name: 恢复编译缓存
       uses: actions/cache@v6
@@ -272,6 +273,7 @@ jobs:
         delete_tags: true
         gh_token: ${{ secrets.GITHUB_TOKEN }}
 
+    # 优先卸载swap文件，解除文件占用，再让系统清理目录
     - name: Clean up swap
       if: always()
       run: |
