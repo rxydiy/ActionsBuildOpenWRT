@@ -25,7 +25,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_COWTRANSFER: false
   UPLOAD_WETRANSFER: false
-  UPLOAD_RELEASE: false
+  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   CONFIG_CACHE_REF: pkg_ref.txt
   UPSTREAM_COMMIT_FILE: upstream_commit.txt
