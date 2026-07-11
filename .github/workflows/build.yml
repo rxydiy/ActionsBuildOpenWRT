@@ -45,10 +45,11 @@ jobs:
 
     - name: 挂载4G Swap 缓解内存溢出
       run: |
-        sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
-        sudo chmod 600 /swapfile
-        sudo mkswap /swapfile
-        sudo swapon /swapfile
+        cd "$GITHUB_WORKSPACE"
+        sudo dd if=/dev/zero of=swapfile bs=1M count=4096 status=none
+        sudo chmod 600 swapfile
+        sudo mkswap swapfile
+        sudo swapon swapfile
         echo 10 | sudo tee /proc/sys/vm/swappiness
         free -h
 
@@ -274,5 +275,6 @@ jobs:
     - name: Clean up swap
       if: always()
       run: |
-        sudo swapoff /swapfile
-        sudo rm -f /swapfile
+        cd "$GITHUB_WORKSPACE"
+        sudo swapoff swapfile || true
+        sudo rm -f swapfile
