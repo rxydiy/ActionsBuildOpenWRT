@@ -25,7 +25,7 @@ env:
   UPLOAD_FIRMWARE: true
   UPLOAD_COWTRANSFER: false
   UPLOAD_WETRANSFER: false
-  UPLOAD_RELEASE: true
+  UPLOAD_RELEASE: false
   TZ: Asia/Shanghai
   CONFIG_CACHE_REF: pkg_ref.txt
   UPSTREAM_COMMIT_FILE: upstream_commit.txt
@@ -97,7 +97,7 @@ jobs:
     - name: Checkout 拉取自定义文件
       uses: actions/checkout@v6
 
-    # 缓存新增上游commit记录文件
+    # 缓存增加 old_commit.txt
     - name: 恢复编译缓存
       uses: actions/cache@v6
       with:
@@ -107,6 +107,7 @@ jobs:
           openwrt/staging_dir
           ${{ env.CONFIG_CACHE_REF }}
           ${{ env.UPSTREAM_COMMIT_FILE }}
+          old_commit.txt
         key: mt798x-6.6-build-${{ github.sha }}
         restore-keys: mt798x-6.6-build-
 
@@ -148,8 +149,7 @@ jobs:
         cd openwrt
         git rev-parse HEAD > ../${{ env.UPSTREAM_COMMIT_FILE }}
 
-
-    - name: 执行diy-part1.sh(feeds更新安装)
+    - name: 执行diy-part1.sh(替换golang+feeds更新安装)
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
@@ -170,11 +170,7 @@ jobs:
         cd openwrt
         grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config > ../current_pkg.txt
 
-    # 判断是否需要编译：
-    # 1.定时/手动 强制编译
-    # 2.上游源码更新，强制编译
-    # 3.插件配置改动，编译
-    # 其余情况跳过编译
+    # 判断是否需要编译，输出变更插件清单
     - name: 判断是否执行完整编译
       id: judge_build
       run: |
@@ -183,21 +179,21 @@ jobs:
           echo "⏰ 定时/手动触发，强制完整编译"
           NEED_BUILD=1
         else
-          # 检测上游源码是否更新
-          if [ -f ${{ env.CONFIG_CACHE_REF }} ] && [ -f old_${{ env.UPSTREAM_COMMIT_FILE }} ]; then
-            cp ${{ env.UPSTREAM_COMMIT_FILE }} new_commit.txt
-            if ! diff -q new_commit.txt old_${{ env.UPSTREAM_COMMIT_FILE }}; then
+          #检测上游源码是否更新
+          if [ -f ${{ env.CONFIG_CACHE_REF }} ] && [ -f ${{ env.UPSTREAM_COMMIT_FILE }} ] && [ -f old_commit.txt ]; then
+            if ! diff -q ${{ env.UPSTREAM_COMMIT_FILE }} old_commit.txt; then
               echo "⚠️ 上游ImmortalWrt源码已更新，强制编译"
               NEED_BUILD=1
             fi
           fi
 
-          # 插件配置对比
+          # 插件配置对比并打印变更项
           if [ $NEED_BUILD -eq 0 ] && [ -f ${{ env.CONFIG_CACHE_REF }} ]; then
             if diff -q current_pkg.txt ${{ env.CONFIG_CACHE_REF }}; then
               echo "✅ 插件配置无变更，跳过下载、编译、上传"
             else
-              echo "⚠️ 插件配置发生变更，执行完整编译流程"
+              echo "⚠️ .config 插件配置发生变更，变动清单："
+              diff -u ${{ env.CONFIG_CACHE_REF }} current_pkg.txt | grep -E '^[+-]' | grep -v '^[+-][+-]'
               NEED_BUILD=1
             fi
           elif [ $NEED_BUILD -eq 0 ]; then
@@ -205,8 +201,7 @@ jobs:
             NEED_BUILD=1
           fi
         fi
-        # 保存旧的上游Commit用于下一轮对比
-        cp ${{ env.UPSTREAM_COMMIT_FILE }} old_${{ env.UPSTREAM_COMMIT_FILE }} || true
+        cp ${{ env.UPSTREAM_COMMIT_FILE }} old_commit.txt || true
         echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
 
     - name: Download package
