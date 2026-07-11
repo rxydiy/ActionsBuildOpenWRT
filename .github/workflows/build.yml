@@ -45,7 +45,7 @@ jobs:
 
     - name: 挂载4G Swap 缓解内存溢出
       run: |
-        sudo fallocate -l 4G /swapfile
+        sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 status=none
         sudo chmod 600 /swapfile
         sudo mkswap /swapfile
         sudo swapon /swapfile
@@ -112,14 +112,14 @@ jobs:
         cd openwrt
         git rev-parse HEAD > ../${{ env.UPSTREAM_COMMIT_FILE }}
 
-    - name: 执行diy-part1.sh
+    - name: 执行diy‑part1.sh
       run: |
         [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: Load custom configuration & 执行diy-part2.sh
+    - name: Load custom configuration & 执行diy‑part2.sh
       run: |
         [ -d "$GITHUB_WORKSPACE/files" ] && cp -rf "$GITHUB_WORKSPACE/files" "$GITHUB_WORKSPACE/openwrt/"
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
@@ -270,3 +270,9 @@ jobs:
         releases_keep_latest: 5
         delete_tags: true
         gh_token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Clean up swap
+      if: always()
+      run: |
+        sudo swapoff /swapfile
+        sudo rm -f /swapfile
