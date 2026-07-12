@@ -140,7 +140,7 @@ jobs:
       run: |
         NEED_BUILD=0
 
-        # 第一步：检测上游源码更新
+        #检测上游源码更新
         if [ -f ${{ env.CONFIG_CACHE_REF }} ] && [ -f ${{ env.UPSTREAM_COMMIT_FILE }} ] && [ -f old_commit.txt ]; then
           if ! diff -q ${{ env.UPSTREAM_COMMIT_FILE }} old_commit.txt; then
             echo "⚠️ 上游源码更新，强制编译"
@@ -148,10 +148,10 @@ jobs:
           fi
         fi
 
-        # 第二步：对比插件配置，打印变更清单
+        #对比插件配置，输出变更清单
         if [ $NEED_BUILD -eq 0 ] && [ -f ${{ env.CONFIG_CACHE_REF }} ]; then
           if diff -q current_pkg.txt ${{ env.CONFIG_CACHE_REF }}; then
-            echo "✅ 插件配置无变更"
+            echo "✅ 插件配置无变更，停止编译"
           else
             echo "⚠️ 插件配置变更清单："
             diff -u ${{ env.CONFIG_CACHE_REF }} current_pkg.txt | grep -E '^[+-]' | grep -v '^[+-][+-]'
@@ -160,12 +160,6 @@ jobs:
         elif [ $NEED_BUILD -eq 0 ]; then
           echo "ℹ️ 首次运行无缓存，执行编译"
           NEED_BUILD=1
-        else
-          # 缓存存在后，定时任务才兜底强制编译
-          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            echo "⏰ 定时/手动触发，兜底强制完整编译"
-            NEED_BUILD=1
-          fi
         fi
 
         cp ${{ env.UPSTREAM_COMMIT_FILE }} old_commit.txt || true
