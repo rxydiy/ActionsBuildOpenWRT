@@ -160,12 +160,12 @@ jobs:
         elif [ $NEED_BUILD -eq 0 ]; then
           echo "ℹ️ 首次运行无缓存，执行编译"
           NEED_BUILD=1
-        fi
-
-        # 第三步：定时/手动兜底强制编译（放在最后，先打印变更日志）
-        if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-          echo "⏰ 定时/手动触发，兜底强制完整编译"
-          NEED_BUILD=1
+        else
+          # 缓存存在后，定时任务才兜底强制编译
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "⏰ 定时/手动触发，兜底强制完整编译"
+            NEED_BUILD=1
+          fi
         fi
 
         cp ${{ env.UPSTREAM_COMMIT_FILE }} old_commit.txt || true
