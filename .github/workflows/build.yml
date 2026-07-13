@@ -139,6 +139,7 @@ jobs:
       id: judge_build
       run: |
         NEED_BUILD=0
+        touch old_commit.txt
 
         #检测上游源码更新
         if [ -f ${{ env.CONFIG_CACHE_REF }} ] && [ -f ${{ env.UPSTREAM_COMMIT_FILE }} ] && [ -f old_commit.txt ]; then
@@ -162,7 +163,16 @@ jobs:
           NEED_BUILD=1
         fi
 
+        #更新上游commit记录
         cp ${{ env.UPSTREAM_COMMIT_FILE }} old_commit.txt || true
+
+        #仅编译成功时更新插件缓存文件
+        if [ "$NEED_BUILD" = "1" ]; then
+          UPDATE_PKG=1
+        else
+          UPDATE_PKG=0
+        fi
+        echo "UPDATE_PKG=$UPDATE_PKG" >> $GITHUB_ENV
         echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
 
     - name: Download package
@@ -189,7 +199,7 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_ENV
 
     - name: 更新配置对比缓存
-      if: env.NEED_BUILD == '1'
+      if: env.UPDATE_PKG == '1'
       run: cp current_pkg.txt ${{ env.CONFIG_CACHE_REF }}
 
     - name: Check space usage
