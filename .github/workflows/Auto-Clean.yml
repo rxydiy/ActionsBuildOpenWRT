@@ -4,7 +4,7 @@
 name: Auto-Clean
 
 on:
-   手动触发按钮
+  手动触发按钮
   workflow_dispatch:
   # cron 定时：每6天执行一次
    cron格式：分 时 日 月 周
