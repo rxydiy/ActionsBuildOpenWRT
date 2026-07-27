@@ -17,7 +17,7 @@ on:
         default: false
         type: boolean
       clean_cache:
-        description: 清空缓存（缓存异常时勾选）
+        description: 清空缓存
         required: false
         default: false
         type: boolean
@@ -53,7 +53,7 @@ jobs:
       - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
         run: |
-          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt current_pkg.txt || true
+          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt third_pkg_ref.txt || true
           echo "✅ 缓存清理完成"
 
       - name: 恢复编译缓存 dl + ccache
@@ -132,13 +132,13 @@ jobs:
 
           if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
             echo "================配置变更===================="
-            echo "新增:"
+            echo "新增启用包:"
             comm -13 pkg_ref.txt current_pkg.txt
-            echo "移除:"
+            echo "取消启用包:"
             comm -23 pkg_ref.txt current_pkg.txt
             echo "============================================"
             if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
-              echo "⚠️ 插件配置发生变化，开始编译"
+              echo "⚠️ 固件配置发生变化，开始编译"
               NEED_BUILD=1
             fi
           elif [ $NEED_BUILD -eq 0 ]; then
@@ -158,7 +158,7 @@ jobs:
           cd openwrt
           make defconfig
           find dl -size -1024c -exec rm -f {} \;
-          timeout 1200 make download -j$(nproc) || timeout 1200 make download -j1 V=s
+          make download -j$(nproc) || make download -j1 V=s
           find dl -size -1024c -exec rm -f {} \;
           echo "✅ 源码下载完成"
 
