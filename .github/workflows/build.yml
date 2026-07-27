@@ -63,7 +63,7 @@ jobs:
       - name: 强制清理本地缓存文件
         if: github.event.inputs.clean_cache == 'true'
         run: |
-          rm -rf openwrt .ccache ${{ env.CONFIG_FILE }} || true
+          rm -rf openwrt .ccache ${{ env.CONFIG_FILE }} build.log || true
           echo "✅ 本地缓存文件已清空"
 
       - name: 恢复编译缓存
@@ -185,10 +185,36 @@ jobs:
         run: |
           cd openwrt
           THREAD=${{ env.COMPILE_THREAD }}
-          echo "===== 使用 ${THREAD} 线程编译固件 ====="
-          nice -n 10 make -j${THREAD} || make -j1 V=s
-          echo "status=success" >> $GITHUB_OUTPUT
+          LOG_FILE=${{ github.workspace }}/build.log
+          echo "===== 使用 ${THREAD} 线程编译固件，日志输出至 build.log ====="
+          set -o pipefail
+          # 先尝试并行编译，全部输出写入日志
+          if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG_FILE}; then
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ 并行编译失败，切换单线程详细模式重试"
+            echo "=========== 并行编译错误日志 ==========="
+            cat ${LOG_FILE}
+            echo "========================================"
+            # 单线程详细编译 V=s
+            if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG_FILE}; then
+              echo "status=success" >> $GITHUB_OUTPUT
+            else
+              echo "❌ 单线程编译依旧失败，完整日志如下"
+              cat ${LOG_FILE}
+              exit 1
+            fi
+          fi
           echo "DEVICE_TARGET=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
+
+      # 无论成功失败，上传编译日志，方便排查
+      - name: 上传编译日志
+        uses: actions/upload-artifact@v4
+        if: env.NEED_BUILD == '1'
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
 
       - name: 上传固件 Artifact
         if: steps.compile.outputs.status == 'success'
