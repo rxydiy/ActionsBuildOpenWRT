@@ -1,4 +1,4 @@
-name: OpenWrt-immortalwrt版
+name: OpenWrt-immortalwrt编译
 
 on:
   schedule:
@@ -17,307 +17,196 @@ on:
         default: false
         type: boolean
       clean_cache:
-        description: 强制清空编译缓存（缓存异常/编译卡住时启用）
+        description: 强制清空编译缓存（缓存腐化、持续卡死时启用）
         required: false
         default: false
         type: boolean
 
 env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x
   REPO_BRANCH: openwrt-24.10-6.6
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: OpenWrt-immortalwrt.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: true
-  UPLOAD_FIRMWARE: true
-  UPLOAD_COWTRANSFER: false
-  UPLOAD_WETRANSFER: false
-  UPLOAD_RELEASE: true
+  COMPILE_THREAD: 2
+  CACHE_KEY_VER: v1.2
   TZ: Asia/Shanghai
-  CONFIG_CACHE_REF: pkg_ref.txt
-  UPSTREAM_COMMIT_FILE: upstream_commit.txt
-  COMPILE_THREAD: 2          # 重点！限制编译线程，防止内存爆swap，解决超时
-  CACHE_KEY_VER: v1.1        # 修改此值即可一键清空所有缓存
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 350      # 延长最大运行时长(默认360，设置350预留缓冲)
+    timeout-minutes: 350
     permissions:
       contents: write
     steps:
-    - name: Free Disk Space
-      uses: endersonmenezes/free-disk-space@v3
-      with:
-        remove_android: true
-        remove_dotnet: true
-        remove_haskell: true
-        remove_tool_cache: true
-        remove_swap: false
-        remove_packages: "azure-cli google-cloud-cli microsoft-edge-stable google-chrome-stable chromedriver google-cloud-sdk firefox postgresql* temurin-* *llvm* mysql* dotnet-sdk-* gfortran* imagemagick* *-jdk mongodb-* mono-* monodoc-* unixodbc-dev ant* perl libgl1-mesa-dri apache2* imagemagick* nginx phantomjs php* libpq-dev r-base* ruby* sphinxsearch"
-        remove_packages_one_command: true
-        remove_folders: "/usr/share/swift /usr/share/miniconda /usr/share/az* /usr/local/lib/node_modules /usr/local/share/chromium /usr/local/share/powershell /usr/local/julia* /usr/local/aws-cli /usr/local/aws-sam-cli /usr/share/gradle* /usr/local/bin/azcopy /usr/share/kotlinc /usr/share/apache-maven-* /usr/local/share/gecko_driver /usr/share/lintian"
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
 
-    - name: Checkout 拉取自定义文件
-      uses: actions/checkout@v6
+      - name: Checkout 拉取自定义文件
+        uses: actions/checkout@v6
 
-    - name: 挂载4G Swap 缓解内存溢出
-      run: |
-        cd "$GITHUB_WORKSPACE"
-        sudo dd if=/dev/zero of=swapfile bs=1M count=4096 status=none
-        sudo chmod 600 swapfile
-        sudo mkswap swapfile
-        sudo swapon swapfile
-        echo 10 | sudo tee /proc/sys/vm/swappiness
-        free -h
+      - name: 挂载4G Swap
+        run: |
+          sudo fallocate -l 4G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap /swapfile
+          sudo swapon /swapfile
+          echo 10 | sudo tee /proc/sys/vm/swappiness
+          free -h
 
-    - name: 强制清理缓存(手动触发选项)
-      if: github.event.inputs.clean_cache == 'true'
-      run: |
-        rm -rf openwrt .ccache ${{ env.CONFIG_CACHE_REF }} ${{ env.UPSTREAM_COMMIT_FILE }}* || true
-        echo "✅ 已手动清空本地缓存文件"
+      - name: 强制清理本地缓存文件
+        if: github.event.inputs.clean_cache == 'true'
+        run: |
+          rm -rf openwrt .ccache ${{ env.CONFIG_FILE }} || true
+          echo "✅ 本地缓存文件已清空"
 
-    - name: 恢复编译缓存
-      uses: actions/cache@v6
-      with:
-        path: |
-          openwrt/dl
-          openwrt/build_dir
-          openwrt/staging_dir
-          .ccache
-          ${{ env.CONFIG_CACHE_REF }}
-          ${{ env.UPSTREAM_COMMIT_FILE }}
-          ${{ env.UPSTREAM_COMMIT_FILE }}.old
-        key: mt798x-6.6-build-${{ env.CACHE_KEY_VER }}-${{ github.base_ref }}
-        restore-keys: mt798x-6.6-build-${{ env.CACHE_KEY_VER }}-
+      - name: 恢复编译缓存
+        uses: actions/cache@v6
+        with:
+          path: |
+            openwrt/dl
+            .ccache
+          key: mt798x-6.6-build-${{ env.CACHE_KEY_VER }}-${{ github.base_ref }}
+          restore-keys: |
+            mt798x-6.6-build-${{ env.CACHE_KEY_VER }}-
 
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
-      run: |
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq full-upgrade
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-        bzip2 ccache clang cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
-        genisoimage git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
-        libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev \
-        libreadline-dev libssl-dev libtool llvm lrzsz msmtp ninja-build p7zip p7zip-full patch pkgconf \
-        python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion \
-        swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/local/lib/android /opt/ghc /usr/share/dotnet /usr/local/graalvm /usr/local/.ghcup \
-        /usr/local/share/powershell /usr/local/share/chromium /usr/local/lib/node_modules
-        sudo timedatectl set-timezone "$TZ"
-        sudo chown $USER:$GROUPS $GITHUB_WORKSPACE
+      - name: Initialization environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt update
+          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
+          git gzip libncurses-dev libssl-dev libxml2-dev make nano pkgconf python3 python3-pip python3-setuptools \
+          python3-dev rsync sed unzip wget zlib1g-dev timeout
+          sudo timedatectl set-timezone ${{ env.TZ }}
 
-    - name: Enable CCache
-      run: |
-        echo "export CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
-        echo "export CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
+      - name: Enable CCache
+        run: |
+          echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
+          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
 
-    - name: Clone / Update source code
-      run: |
-        if [ -d "openwrt" ]; then
-          if [ ! -d "openwrt/.git" ]; then
-            rm -rf openwrt
-          fi
-        fi
-        if [ -d openwrt/.git ];then
-          cd openwrt
-          git fetch origin $REPO_BRANCH
-          git reset --hard origin/$REPO_BRANCH
-        else
-          git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
-        fi
-        cd openwrt
-        git rev-parse HEAD > ../${{ env.UPSTREAM_COMMIT_FILE }}
-
-    - name: 执行diy‑part1.sh
-      run: |
-        [ -f $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
-
-    - name: Load custom configuration & 执行diy‑part2.sh
-      run: |
-        [ -d "$GITHUB_WORKSPACE/files" ] && cp -rf "$GITHUB_WORKSPACE/files" "$GITHUB_WORKSPACE/openwrt/"
-        [ -f $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-
-    - name: 提取插件配置用于检测变更
-      run: |
-        cd openwrt
-        # 排序输出，消除行顺序波动造成的虚假diff！【关键修复】
-        grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config | sort > ../current_pkg.txt
-
-    - name: 判断是否执行完整编译 + 打印插件变更清单【重点优化】
-      id: judge_build
-      run: |
-        NEED_BUILD=0
-        FORCE=${{ github.event.inputs.force_build || false }}
-
-        # 手动强制编译
-        if [[ "$FORCE" == "true" ]]; then
-          echo "⚠️ 手动开启强制编译"
-          NEED_BUILD=1
-        fi
-
-        # 检测上游源码commit变更
-        if [ $NEED_BUILD -eq 0 ] && [ -f ${{ env.CONFIG_CACHE_REF }} ] && [ -f ${{ env.UPSTREAM_COMMIT_FILE }} ] && [ -f ${{ env.UPSTREAM_COMMIT_FILE }}.old ]; then
-          if ! diff -q ${{ env.UPSTREAM_COMMIT_FILE }} ${{ env.UPSTREAM_COMMIT_FILE }}.old; then
-            echo "⚠️ 【上游源码更新】触发编译"
-            NEED_BUILD=1
-          fi
-        fi
-
-        # 对比插件配置变更
-        if [ $NEED_BUILD -eq 0 ] && [ -f ${{ env.CONFIG_CACHE_REF }} ]; then
-          echo "====================插件变更检测===================="
-          echo "【本次新增插件/配置】"
-          comm -13 ${{ env.CONFIG_CACHE_REF }} current_pkg.txt
-          echo "----------------------------------------------------"
-          echo "【移除/关闭的插件/配置】"
-          comm -23 ${{ env.CONFIG_CACHE_REF }} current_pkg.txt
-          echo "===================================================="
-
-          if diff -q current_pkg.txt ${{ env.CONFIG_CACHE_REF }}; then
-            echo "✅ 插件配置无变更，跳过编译"
+      - name: Clone / Update source code
+        run: |
+          if [ ! -d openwrt ]; then
+            git clone --depth=1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
           else
-            echo "⚠️ 检测到插件配置变更，触发编译"
+            cd openwrt
+            git fetch origin ${{ env.REPO_BRANCH }}
+            git reset --hard origin/${{ env.REPO_BRANCH }}
+          fi
+          cd openwrt
+          git rev-parse HEAD > ../upstream_commit.txt
+
+      - name: 执行diy-part1.sh
+        run: |
+          chmod +x ${{ env.DIY_P1_SH }}
+          ./${{ env.DIY_P1_SH }}
+
+      - name: Load custom configuration & 执行diy-part2.sh
+        run: |
+          cp ${{ env.CONFIG_FILE }} openwrt/.config
+          chmod +x ${{ env.DIY_P2_SH }}
+          ./${{ env.DIY_P2_SH }}
+          cd openwrt
+          make defconfig
+
+      - name: 提取插件配置用于检测变更
+        run: |
+          cd openwrt
+          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config | sort > ../current_pkg.txt
+
+      - name: 判断是否执行完整编译 + 打印插件变更清单
+        id: judge_build
+        run: |
+          NEED_BUILD=0
+          FORCE=${{ github.event.inputs.force_build || false }}
+          if [[ "$FORCE" == "true" ]]; then
+            echo "⚠️ 手动开启强制编译"
             NEED_BUILD=1
           fi
-        elif [ $NEED_BUILD -eq 0 ]; then
-          echo "ℹ️ 首次运行无缓存，执行编译"
-          NEED_BUILD=1
-        fi
 
-        echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
-        echo "UPDATE_CACHE=0" >> $GITHUB_ENV
-        if [ "$NEED_BUILD" = "1" ]; then
-          echo "UPDATE_CACHE=1" >> $GITHUB_ENV
-        fi
+          # 对比上游源码是否更新
+          if [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
+            if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
+              echo "⚠️【上游源码更新】触发编译"
+              NEED_BUILD=1
+            fi
+          fi
 
-    - name: Download package
-      id: package
-      if: env.NEED_BUILD == '1'
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j$(nproc)
-        find dl -size -1024c -exec rm -f {} \;
+          # 对比插件配置
+          if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
+            echo "====================插件变更检测===================="
+            echo "【本次新增插件/配置】"
+            comm -13 pkg_ref.txt current_pkg.txt
+            echo "----------------------------------------------------"
+            echo "【移除/关闭的插件/配置】"
+            comm -23 pkg_ref.txt current_pkg.txt
+            echo "===================================================="
+            if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
+              echo "⚠️ 检测到插件配置变更，触发编译"
+              NEED_BUILD=1
+            fi
+          elif [ $NEED_BUILD -eq 0 ]; then
+            echo "ℹ️ 首次运行无缓存基准文件，执行编译"
+            NEED_BUILD=1
+          fi
 
-    - name: Compile the firmware
-      id: compile
-      if: env.NEED_BUILD == '1'
-      run: |
-        cd openwrt
-        THREAD=${{ env.COMPILE_THREAD }}
-        echo "===== 单线程编译工具链，降低OOM风险 ====="
-        nice -n 10 make -j1 tools/install
-        nice -n 10 make -j1 toolchain/install
-        echo "===== 使用 ${THREAD} 线程编译固件 ====="
-        nice -n 10 make -j${THREAD} || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_ENV
+          echo "NEED_BUILD=${NEED_BUILD}" >> $GITHUB_ENV
+          if [[ "$NEED_BUILD" == "1" ]]; then
+            cp upstream_commit.txt last_commit.txt
+            cp current_pkg.txt pkg_ref.txt
+          fi
 
-    - name: 更新配置对比缓存 & 保存当前上游commit
-      if: env.UPDATE_CACHE == '1' && steps.compile.outputs.status == 'success'
-      run: |
-        cp current_pkg.txt ${{ env.CONFIG_CACHE_REF }}
-        cp ${{ env.UPSTREAM_COMMIT_FILE }} ${{ env.UPSTREAM_COMMIT_FILE }}.old
+      - name: Download package
+        if: env.NEED_BUILD == '1'
+        run: |
+          cd openwrt
+          make defconfig
+          # 清理不完整下载文件
+          find dl -size -1024c -delete
+          echo "开始多线程下载源码包"
+          timeout 1200 make download -j$(nproc) || {
+            echo "多线程下载超时/失败，切换单线程重试"
+            timeout 1200 make download -j1 V=s
+          }
+          find dl -size -1024c -delete
+          echo "✅ 下载阶段完成"
 
-    - name: Check space usage
-      if: (!cancelled() && env.NEED_BUILD == '1')
-      run: df -hT
+      - name: Compile firmware
+        id: compile
+        if: env.NEED_BUILD == '1'
+        run: |
+          cd openwrt
+          THREAD=${{ env.COMPILE_THREAD }}
+          echo "===== 使用 ${THREAD} 线程编译固件 ====="
+          nice -n 10 make -j${THREAD} || make -j1 V=s
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "DEVICE_TARGET=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
 
-    - name: Upload bin directory
-      uses: actions/upload-artifact@v6
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true' && env.NEED_BUILD == '1'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
+      - name: 上传固件 Artifact
+        if: steps.compile.outputs.status == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt-Firmware-${{ env.DEVICE_TARGET }}
+          path: |
+            openwrt/bin/targets/**/*.bin
+            openwrt/bin/targets/**/*.manifest
+          retention-days: 7
 
-    - name: Organize files
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled() && env.NEED_BUILD == '1'
-      run: |
-        cd openwrt/bin/targets/*/*
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware directory
-      uses: actions/upload-artifact@v6
-      if: steps.organize.outputs.status == 'success' && !cancelled() && env.NEED_BUILD == '1'
-      with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}
-
-    - name: Upload firmware to cowtransfer
-      id: cowtransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_COWTRANSFER == 'true' && !cancelled() && env.NEED_BUILD == '1'
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer cow --block 2621440 -s -p 64 --no-progress ${FIRMWARE} 2>&1 | tee cowtransfer.log
-        echo "::warning file=cowtransfer.com::$(cat cowtransfer.log | grep https)"
-        echo "url=$(cat cowtransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware to WeTransfer
-      id: wetransfer
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_WETRANSFER == 'true' && !cancelled() && env.NEED_BUILD == '1'
-      run: |
-        curl -fsSL git.io/file-transfer | sh
-        ./transfer wet -s -p 16 --no-progress ${FIRMWARE} 2>&1 | tee wetransfer.log
-        echo "::warning file=wetransfer.com::$(cat wetransfer.log | grep https)"
-        echo "url=$(cat wetransfer.log | grep https | cut -f3 -d" ")" >> $GITHUB_OUTPUT
-
-    - name: Generate release tag
-      id: tag
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled() && env.NEED_BUILD == '1'
-      run: |
-        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
-        touch release.txt
-        [ $UPLOAD_COWTRANSFER = true ] && echo "🔗 [Cowtransfer](${{ steps.cowtransfer.outputs.url }})" >> release.txt
-        [ $UPLOAD_WETRANSFER = true ] && echo "🔗 [WeTransfer](${{ steps.wetransfer.outputs.url }})" >> release.txt
-        echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Upload firmware to release
-      uses: softprops/action-gh-release@v2
-      if: steps.tag.outputs.status == 'success' && !cancelled() && env.NEED_BUILD == '1'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.tag.outputs.release_tag }}
-        body_path: release.txt
-        files: ${{ env.FIRMWARE }}/*
-
-    - name: Delete workflow runs
-      uses: ophub/delete-releases-workflows@main
-      with:
-        delete_releases: false
-        delete_workflows: true
-        workflows_keep_day: 7
-        gh_token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Remove old Releases
-      uses: ophub/delete-releases-workflows@main
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled() && env.NEED_BUILD == '1'
-      with:
-        delete_releases: true
-        releases_keep_latest: 5
-        delete_tags: true
-        gh_token: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Clean up swap
-      if: always()
-      run: |
-        cd "$GITHUB_WORKSPACE"
-        sudo swapoff swapfile || true
-        sudo rm -f swapfile
+      - name: 发布Release
+        if: steps.compile.outputs.status == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: auto-build-$(date +%Y%m%d-%H%M)
+          name: OpenWrt自动构建 $(date +%Y-%m-%d)
+          files: openwrt/bin/targets/**/*.bin
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
