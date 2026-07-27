@@ -46,7 +46,7 @@ jobs:
           tool-cache: true
           large-packages: true
           docker-images: true
-          swap-storage: true # 保留系统swap，不再手动创建swapfile
+          swap-storage: true
 
       - name: Checkout 拉取自定义文件
         uses: actions/checkout@v6
@@ -75,7 +75,7 @@ jobs:
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
           bzip2 ccache cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
           git gzip libncurses-dev libssl-dev libxml2-dev make nano pkgconf python3 python3-pip python3-setuptools \
-          python3-dev rsync sed unzip wget zlib1g-dev timeout
+          python3-dev rsync sed unzip wget zlib1g-dev
           sudo timedatectl set-timezone ${{ env.TZ }}
 
       - name: Enable CCache
@@ -123,7 +123,6 @@ jobs:
             NEED_BUILD=1
           fi
 
-          # 对比上游源码是否更新
           if [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
             if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
               echo "⚠️【上游源码更新】触发编译"
@@ -131,7 +130,6 @@ jobs:
             fi
           fi
 
-          # 对比插件配置
           if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
             echo "====================插件变更检测===================="
             echo "【本次新增插件/配置】"
@@ -160,7 +158,6 @@ jobs:
         run: |
           cd openwrt
           make defconfig
-          # 清理不完整下载文件
           find dl -size -1024c -delete
           echo "开始多线程下载源码包"
           timeout 1200 make download -j$(nproc) || {
@@ -179,7 +176,6 @@ jobs:
           LOG_FILE=${{ github.workspace }}/build.log
           echo "===== 使用 ${THREAD} 线程编译固件，日志输出至 build.log ====="
           set -o pipefail
-          # 先尝试并行编译，全部输出写入日志
           if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG_FILE}; then
             echo "status=success" >> $GITHUB_OUTPUT
           else
@@ -187,7 +183,6 @@ jobs:
             echo "=========== 并行编译错误日志 ==========="
             cat ${LOG_FILE}
             echo "========================================"
-            # 单线程详细编译 V=s
             if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG_FILE}; then
               echo "status=success" >> $GITHUB_OUTPUT
             else
@@ -198,7 +193,6 @@ jobs:
           fi
           echo "DEVICE_TARGET=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
 
-      # 无论成功失败，上传编译日志，方便排查
       - name: 上传编译日志
         uses: actions/upload-artifact@v4
         if: env.NEED_BUILD == '1'
