@@ -74,7 +74,7 @@ jobs:
           sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
           bzip2 ccache cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
           git gzip libncurses-dev libssl-dev libxml2-dev make nano pkgconf python3 python3-pip python3-setuptools \
-          python3-dev rsync sed unzip wget zlib1g-dev
+          rsync sed unzip wget zlib1g-dev
           sudo timedatectl set-timezone ${{ env.TZ }}
 
       - name: 配置CCache
@@ -97,14 +97,15 @@ jobs:
       - name: 执行 diy-part1.sh
         run: |
           chmod +x ${{ env.DIY_P1_SH }}
-          ./${{ env.DIY_P1_SH }}
+          cd openwrt
+          ../${{ env.DIY_P1_SH }}
 
       - name: 导入配置 + 执行 diy-part2.sh
         run: |
           cp ${{ env.CONFIG_FILE }} openwrt/.config
           chmod +x ${{ env.DIY_P2_SH }}
-          ./${{ env.DIY_P2_SH }}
           cd openwrt
+          ../${{ env.DIY_P2_SH }}
           make defconfig
 
       - name: 导出配置用于变更对比
@@ -156,9 +157,9 @@ jobs:
         run: |
           cd openwrt
           make defconfig
-          find dl -size -1024c -delete
+          find dl -size -1024c -exec rm -f {} \;
           timeout 1200 make download -j$(nproc) || timeout 1200 make download -j1 V=s
-          find dl -size -1024c -delete
+          find dl -size -1024c -exec rm -f {} \;
           echo "✅ 源码下载完成"
 
       - name: 编译固件
@@ -181,7 +182,7 @@ jobs:
               exit 1
             fi
           fi
-          echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
+          echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
 
       - name: 上传编译日志
         uses: actions/upload-artifact@v4
