@@ -1,9 +1,18 @@
 #!/bin/bash
-set -e
-FEEDS_CONF=feeds.conf.default
 
+sed -i 's/#src-git/src-git/' feeds.conf.default
 ./scripts/feeds update -a
+
+./scripts/feeds list -i > /tmp/old_feeds.txt
 ./scripts/feeds install -a
+./scripts/feeds list -i > /tmp/new_feeds.txt
+
+echo -e "\n==================== 新增 / 版本更新插件 ===================="
+diff --suppress-common-lines /tmp/old_feeds.txt /tmp/new_feeds.txt | grep '^>' | sed 's/^> //'
+echo -e "============================================================\n"
+
+rm -f /tmp/old_feeds.txt /tmp/new_feeds.txt
+
 
 # 移除 openwrt feeds 自带的核心库
 rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
