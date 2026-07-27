@@ -1,8 +1,8 @@
-name: OpenWrt-immortalwrt编译
+name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   schedule:
-    - cron: 0 22 * * *
+    - cron: 0 23 * * *
   push:
     paths:
       - OpenWrt-immortalwrt.config
@@ -12,20 +12,19 @@ on:
   workflow_dispatch:
     inputs:
       force_build:
-        description: 强制编译(无视配置/上游无变更检测)
+        description: 强制编译（无视变更检测）
         required: false
         default: false
         type: boolean
       clean_cache:
-        description: 强制清空编译缓存（缓存腐化、持续卡死时启用）
+        description: 清空缓存（缓存异常时勾选）
         required: false
         default: false
         type: boolean
 
 env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
   REPO_BRANCH: openwrt-24.10-6.6
-  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: OpenWrt-immortalwrt.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
@@ -36,11 +35,11 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 350
+    timeout-minutes: 360
     permissions:
       contents: write
     steps:
-      - name: Free Disk Space
+      - name: 释放磁盘空间
         uses: jlumbroso/free-disk-space@main
         with:
           tool-cache: true
@@ -48,26 +47,26 @@ jobs:
           docker-images: true
           swap-storage: true
 
-      - name: Checkout 拉取自定义文件
+      - name: 拉取仓库配置文件
         uses: actions/checkout@v6
 
-      - name: 强制清理本地缓存文件
+      - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
         run: |
-          rm -rf openwrt .ccache ${{ env.CONFIG_FILE }} build.log || true
-          echo "✅ 本地缓存文件已清空"
+          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt current_pkg.txt || true
+          echo "✅ 缓存清理完成"
 
-      - name: 恢复编译缓存
+      - name: 恢复编译缓存 dl + ccache
         uses: actions/cache@v6
         with:
           path: |
             openwrt/dl
             .ccache
-          key: mt798x-6.6-build-${{ env.CACHE_KEY_VER }}-${{ github.base_ref }}
+          key: mt798x-6.6-${{ env.CACHE_KEY_VER }}
           restore-keys: |
-            mt798x-6.6-build-${{ env.CACHE_KEY_VER }}-
+            mt798x-6.6-${{ env.CACHE_KEY_VER }}
 
-      - name: Initialization environment
+      - name: 初始化编译环境
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
@@ -78,12 +77,12 @@ jobs:
           python3-dev rsync sed unzip wget zlib1g-dev
           sudo timedatectl set-timezone ${{ env.TZ }}
 
-      - name: Enable CCache
+      - name: 配置CCache
         run: |
           echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
           echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
 
-      - name: Clone / Update source code
+      - name: 克隆/更新源码
         run: |
           if [ ! -d openwrt ]; then
             git clone --depth=1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
@@ -95,12 +94,12 @@ jobs:
           cd openwrt
           git rev-parse HEAD > ../upstream_commit.txt
 
-      - name: 执行diy-part1.sh
+      - name: 执行 diy-part1.sh
         run: |
           chmod +x ${{ env.DIY_P1_SH }}
           ./${{ env.DIY_P1_SH }}
 
-      - name: Load custom configuration & 执行diy-part2.sh
+      - name: 导入配置 + 执行 diy-part2.sh
         run: |
           cp ${{ env.CONFIG_FILE }} openwrt/.config
           chmod +x ${{ env.DIY_P2_SH }}
@@ -108,42 +107,41 @@ jobs:
           cd openwrt
           make defconfig
 
-      - name: 提取插件配置用于检测变更
+      - name: 导出配置用于变更对比
         run: |
           cd openwrt
-          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config | sort > ../current_pkg.txt
+          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_)' .config | sort > ../current_pkg.txt
 
-      - name: 判断是否执行完整编译 + 打印插件变更清单
+      - name: 判断是否启动编译
         id: judge_build
         run: |
           NEED_BUILD=0
           FORCE=${{ github.event.inputs.force_build || false }}
           if [[ "$FORCE" == "true" ]]; then
-            echo "⚠️ 手动开启强制编译"
+            echo "⚠️ 手动强制编译开启"
             NEED_BUILD=1
           fi
 
           if [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
             if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
-              echo "⚠️【上游源码更新】触发编译"
+              echo "⚠️ 上游源码更新，触发编译"
               NEED_BUILD=1
             fi
           fi
 
           if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
-            echo "====================插件变更检测===================="
-            echo "【本次新增插件/配置】"
+            echo "================配置变更===================="
+            echo "新增:"
             comm -13 pkg_ref.txt current_pkg.txt
-            echo "----------------------------------------------------"
-            echo "【移除/关闭的插件/配置】"
+            echo "移除:"
             comm -23 pkg_ref.txt current_pkg.txt
-            echo "===================================================="
+            echo "============================================"
             if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
-              echo "⚠️ 检测到插件配置变更，触发编译"
+              echo "⚠️ 插件配置发生变化，开始编译"
               NEED_BUILD=1
             fi
           elif [ $NEED_BUILD -eq 0 ]; then
-            echo "ℹ️ 首次运行无缓存基准文件，执行编译"
+            echo "ℹ️ 首次构建，执行编译"
             NEED_BUILD=1
           fi
 
@@ -153,45 +151,37 @@ jobs:
             cp current_pkg.txt pkg_ref.txt
           fi
 
-      - name: Download package
+      - name: 预下载源码包
         if: env.NEED_BUILD == '1'
         run: |
           cd openwrt
           make defconfig
           find dl -size -1024c -delete
-          echo "开始多线程下载源码包"
-          timeout 1200 make download -j$(nproc) || {
-            echo "多线程下载超时/失败，切换单线程重试"
-            timeout 1200 make download -j1 V=s
-          }
+          timeout 1200 make download -j$(nproc) || timeout 1200 make download -j1 V=s
           find dl -size -1024c -delete
-          echo "✅ 下载阶段完成"
+          echo "✅ 源码下载完成"
 
-      - name: Compile firmware
-        id: compile
+      - name: 编译固件
+        id: compile_firm
         if: env.NEED_BUILD == '1'
         run: |
           cd openwrt
           THREAD=${{ env.COMPILE_THREAD }}
-          LOG_FILE=${{ github.workspace }}/build.log
-          echo "===== 使用 ${THREAD} 线程编译固件，日志输出至 build.log ====="
+          LOG=${{ github.workspace }}/build.log
           set -o pipefail
-          if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG_FILE}; then
-            echo "status=success" >> $GITHUB_OUTPUT
+          if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
+            echo "result=ok" >> $GITHUB_OUTPUT
           else
-            echo "❌ 并行编译失败，切换单线程详细模式重试"
-            echo "=========== 并行编译错误日志 ==========="
-            cat ${LOG_FILE}
-            echo "========================================"
-            if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG_FILE}; then
-              echo "status=success" >> $GITHUB_OUTPUT
+            echo "❌ 多线程编译失败，切换单线程重试"
+            cat ${LOG}
+            if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
+              echo "result=ok" >> $GITHUB_OUTPUT
             else
-              echo "❌ 单线程编译依旧失败，完整日志如下"
-              cat ${LOG_FILE}
+              echo "❌ 编译最终失败"
               exit 1
             fi
           fi
-          echo "DEVICE_TARGET=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
+          echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
 
       - name: 上传编译日志
         uses: actions/upload-artifact@v4
@@ -201,22 +191,22 @@ jobs:
           path: build.log
           retention-days: 7
 
-      - name: 上传固件 Artifact
-        if: steps.compile.outputs.status == 'success'
+      - name: 上传固件文件
+        if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-Firmware-${{ env.DEVICE_TARGET }}
+          name: OpenWrt-Firmware-${{ steps.compile_firm.outputs.BOARD }}
           path: |
             openwrt/bin/targets/**/*.bin
             openwrt/bin/targets/**/*.manifest
-          retention-days: 7
+          retention-days: 14
 
-      - name: 发布Release
-        if: steps.compile.outputs.status == 'success'
+      - name: 创建Release发布
+        if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: auto-build-$(date +%Y%m%d-%H%M)
-          name: OpenWrt自动构建 $(date +%Y-%m-%d)
+          tag_name: build-${{ github.run_number }}-$(date +%Y%m%d)
+          name: MT798x 6.6内核自动构建 ${{ github.run_number }}
           files: openwrt/bin/targets/**/*.bin
           generate_release_notes: true
         env:
