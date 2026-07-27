@@ -1,5 +1,21 @@
 #!/bin/bash
 
+
+# 拉取第三方插件示例
+git clone  https://github.com/gdy666/luci-app-lucky.git package/lucky   #  lucky 
+git clone https://github.com/sirpdboy/luci-app-taskplan.git package/luci-app-taskplan               #  定时任务设置
+
+# git clone https://github.com/linkease/istore.git package/istore
+
+git clone https://github.com/kenzok8/small.git package/small
+
+git clone https://github.com/whzhni1/luci-app-vnt2.git package/vnt
+
+git clone --depth 1 https://github.com/jcorporation/myMPD.git /tmp/tmp_mympd
+mv /tmp/tmp_mympd/contrib/packaging/openwrt package/mympd/
+rm -rf /tmp/tmp_mympd
+sed -i '78s/^[[:space:]]*/\t/' package/mympd/Makefile
+
 sed -i 's/#src-git/src-git/' feeds.conf.default
 ./scripts/feeds update -a
 
@@ -26,17 +42,4 @@ rm -rf feeds/luci/applications/luci-app-openlist
 rm -rf feeds/packages/net/openlist
 rm -rf feeds/packages/net/mosdns
 
-# 拉取第三方插件示例
-git clone  https://github.com/gdy666/luci-app-lucky.git package/lucky   #  lucky 
-git clone https://github.com/sirpdboy/luci-app-taskplan.git package/luci-app-taskplan               #  定时任务设置
 
-# git clone https://github.com/linkease/istore.git package/istore
-
-git clone https://github.com/kenzok8/small.git package/small
-
-git clone https://github.com/whzhni1/luci-app-vnt2.git package/vnt
-
-git clone --depth 1 https://github.com/jcorporation/myMPD.git /tmp/tmp_mympd
-mv /tmp/tmp_mympd/contrib/packaging/openwrt package/mympd/
-rm -rf /tmp/tmp_mympd
-sed -i '78s/^[[:space:]]*/\t/' package/mympd/Makefile
