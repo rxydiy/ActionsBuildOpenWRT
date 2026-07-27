@@ -16,19 +16,40 @@ mv /tmp/tmp_mympd/contrib/packaging/openwrt package/mympd/
 rm -rf /tmp/tmp_mympd
 sed -i '78s/^[[:space:]]*/\t/' package/mympd/Makefile
 
+
+
+
+# 保存第三方插件当前commit快照（变更检测前置）
+find package -maxdepth 1 -type d | grep -v base-files > /tmp/thrid_list.txt
+while read dir; do
+  if [ -d "${dir}/.git" ];then
+    echo "$(basename $dir):$(git -C $dir rev-parse HEAD)"
+  fi
+done < /tmp/thrid_list.txt > /tmp/third_old.txt
+
+# ======================
+# 第二区块：feeds 更新
+# ======================
 sed -i 's/#src-git/src-git/' feeds.conf.default
 ./scripts/feeds update -a
-
-./scripts/feeds list -i > /tmp/old_feeds.txt
 ./scripts/feeds install -a
-./scripts/feeds list -i > /tmp/new_feeds.txt
 
-echo -e "\n==================== 新增 / 版本更新插件 ===================="
-diff --suppress-common-lines /tmp/old_feeds.txt /tmp/new_feeds.txt | grep '^>' | sed 's/^> //'
-echo -e "============================================================\n"
+# ======================
+# 第三区块：对比第三方插件变更并打印
+# ======================
+find package -maxdepth 1 -type d | grep -v base-files > /tmp/thrid_list.txt
+while read dir; do
+  if [ -d "${dir}/.git" ];then
+    echo "$(basename $dir):$(git -C $dir rev-parse HEAD)"
+  fi
+done < /tmp/thrid_list.txt > /tmp/third_new.txt
 
-rm -f /tmp/old_feeds.txt /tmp/new_feeds.txt
+echo -e "\n====================【第三方插件变更检测】===================="
+diff --suppress-common-lines /tmp/third_old.txt /tmp/third_new.txt
+echo -e "==============================================================\n"
 
+# 清理临时文件
+rm -f /tmp/thrid_list.txt /tmp/third_old.txt /tmp/third_new.txt
 
 # 移除 openwrt feeds 自带的核心库
 rm -rf feeds/packages/net/{xray-core,v2ray-geodata,sing-box,chinadns-ng,dns2socks,hysteria,ipt2socks,microsocks,naiveproxy,shadowsocks-libev,shadowsocks-rust,shadowsocksr-libev,simple-obfs,tcping,trojan-plus,tuic-client,v2ray-plugin,xray-plugin,geoview,shadow-tls}
@@ -40,6 +61,4 @@ rm -rf feeds/luci/applications/helloworld
 rm -rf feeds/luci/applications/luci-app-openclash
 rm -rf feeds/luci/applications/luci-app-openlist
 rm -rf feeds/packages/net/openlist
-rm -rf feeds/packages/net/mosdns
-
 
