@@ -53,7 +53,7 @@ jobs:
       - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
         run: |
-          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt third_pkg_ref.txt || true
+          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt || true
           echo "✅ 缓存清理完成"
 
       - name: 恢复编译缓存 dl + ccache
@@ -147,10 +147,6 @@ jobs:
           fi
 
           echo "NEED_BUILD=${NEED_BUILD}" >> $GITHUB_ENV
-          if [[ "$NEED_BUILD" == "1" ]]; then
-            cp upstream_commit.txt last_commit.txt
-            cp current_pkg.txt pkg_ref.txt
-          fi
 
       - name: 预下载源码包
         if: env.NEED_BUILD == '1'
@@ -184,6 +180,13 @@ jobs:
           fi
           echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
 
+      - name: 更新缓存快照（仅编译成功才写入）
+        if: steps.compile_firm.outputs.result == 'ok'
+        run: |
+          cp upstream_commit.txt last_commit.txt
+          cp current_pkg.txt pkg_ref.txt
+          echo "✅ 缓存快照已更新"
+
       - name: 上传编译日志
         uses: actions/upload-artifact@v4
         if: env.NEED_BUILD == '1'
@@ -202,13 +205,23 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
+      - name: 生成Release Tag并推送远程Tag
+        if: steps.compile_firm.outputs.result == 'ok'
+        run: |
+          TAG_NAME=build-${{ github.run_number }}-$(date +%Y%m%d)
+          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f ${TAG_NAME}
+          git push -f origin ${TAG_NAME}
+
       - name: 创建Release发布
         if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: build-${{ github.run_number }}-$(date +%Y%m%d)
+          tag_name: ${{ env.TAG_NAME }}
           name: MT798x 6.6内核自动构建 ${{ github.run_number }}
-          files: openwrt/bin/targets/**/*.bin
+          files: openwrt/bin/targets/**/*sysupgrade.bin
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
