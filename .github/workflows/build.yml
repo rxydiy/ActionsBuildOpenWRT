@@ -66,6 +66,23 @@ jobs:
           restore-keys: |
             mt798x-6.6-${{ env.CACHE_KEY_VER }}
 
+      - name: 校验源码目录，清除git残留脏仓库
+        run: |
+          if [ -d openwrt ]; then
+            cd openwrt
+            REMOTE_URL=$(git remote get-url origin)
+            CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
+            if [[ "${REMOTE_URL}" != "${{ env.REPO_URL }}" || "${CURRENT_BRANCH}" != "${{ env.REPO_BRANCH }}" ]]; then
+              echo "⚠️ 现有源码仓库分支/地址不匹配，删除重建"
+              cd ..
+              rm -rf openwrt
+            fi
+          fi
+
+      - name: 调试-打印上游仓库所有远程分支
+        run: |
+          git ls-remote --heads ${{ env.REPO_URL }}
+
       - name: 初始化编译环境
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -88,8 +105,11 @@ jobs:
             git clone --depth=1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
           else
             cd openwrt
-            git fetch origin ${{ env.REPO_BRANCH }}
+            # 全量拉取所有远程分支并清理失效旧分支引用
+            git fetch origin --prune
             git reset --hard origin/${{ env.REPO_BRANCH }}
+            # 清理本地未跟踪文件、目录
+            git clean -df
           fi
           cd openwrt
           git rev-parse HEAD > ../upstream_commit.txt
