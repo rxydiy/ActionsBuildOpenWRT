@@ -2,7 +2,8 @@ name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   schedule:
-    - cron: 0 23 * * *
+    # 北京时间 06:00（UTC 22:05）错开整点，减少被调度丢弃概率
+    - cron: 5 52 * * *
   push:
     paths:
       - OpenWrt-immortalwrt.config
