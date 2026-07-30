@@ -2,8 +2,10 @@ name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   schedule:
-    # 北京时间 05:50（UTC 21:50）
-    - cron: 50 21 * * *
+    # 北京时间 05:50（UTC 21:50）主定时
+    - cron: 70 21 * * *
+    # 北京时间 06:05（UTC 22:05）兜底定时
+    - cron: 07 22 * * *
   push:
     paths:
       - OpenWrt-immortalwrt.config
@@ -39,6 +41,8 @@ jobs:
     timeout-minutes: 360
     permissions:
       contents: write
+    outputs:
+      build_success: ${{ steps.compile_firm.outputs.build_success }}
     steps:
       - name: 释放磁盘空间
         uses: jlumbroso/free-disk-space@main
@@ -138,12 +142,8 @@ jobs:
             if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
               echo "⚠️ 固件配置发生变化，开始编译"
               NEED_BUILD=1
-            elif [ $NEED_BUILD -eq 0 ]; then
-              echo "ℹ️ 首次构建，执行编译"
-              NEED_BUILD=1
             fi
           fi
-
           echo "NEED_BUILD=${NEED_BUILD}" >> $GITHUB_ENV
 
       - name: 预下载源码包
@@ -164,21 +164,15 @@ jobs:
           LOG=${{ github.workspace }}/build.log
           set -o pipefail
           if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
-            echo "result=ok" >> $GITHUB_ENV
+            echo "build_success=true" >> $GITHUB_OUTPUT
           else
-            echo "❌ 多线程编译失败，切换单线程重试"
-            cat ${LOG}
-            if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
-              echo "result=ok" >> $GITHUB_ENV
-            else
-              echo "❌ 编译最终失败"
-              exit 1
-            fi
+            echo "build_success=false" >> $GITHUB_OUTPUT
+            exit 1
           fi
           echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
 
       - name: 更新缓存快照
-        if: steps.compile_firm.outputs.result == 'ok'
+        if: steps.compile_firm.outputs.build_success == 'true'
         run: |
           cp upstream_commit.txt last_commit.txt
           cp current_pkg.txt pkg_ref.txt
@@ -193,17 +187,18 @@ jobs:
           retention-days: 7
 
       - name: 上传固件文件
-        if: steps.compile_firm.outputs.result == 'ok'
+        if: steps.compile_firm.outputs.build_success == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-Firmware-${{ steps.compile_firm.outputs.BOARD }}
+          name: OpenWrt-Firmware-${{ env.BOARD }}
           path: |
             openwrt/bin/targets/**/*.bin
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
       - name: 生成Release Tag
-        if: steps.compile_firm.outputs.result == 'ok'
+        id: set_tag
+        if: steps.compile_firm.outputs.build_success == 'true'
         run: |
           TAG_NAME=build-${{ github.run_number }}-$(date +%Y%m%d)
           echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
@@ -213,11 +208,11 @@ jobs:
           git push -f origin ${TAG_NAME}
 
       - name: 创建Release发布
-        if: steps.compile_firm.outputs.result == 'ok'
+        if: steps.compile_firm.outputs.build_success == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_NAME }}
-          name: MT798x 6.6内核自动构建 ${{ github.run_number }}
+          name: MT798x 6.6内核自动构建 ${{ env.TAG_NAME }}
           files: openwrt/bin/targets/**/*sysupgrade.bin
           generate_release_notes: true
         env:
