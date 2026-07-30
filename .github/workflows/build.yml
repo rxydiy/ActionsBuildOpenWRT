@@ -2,8 +2,8 @@ name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   schedule:
-    # 北京时间 06:00（UTC 22:05）错开整点，减少被调度丢弃概率
-    - cron: 5 52 * * *
+    # 北京时间 05:50 （UTC 21:50）
+    - cron: 50 21 * * *
   push:
     paths:
       - OpenWrt-immortalwrt.config
@@ -67,38 +67,18 @@ jobs:
           restore-keys: |
             mt798x-6.6-${{ env.CACHE_KEY_VER }}
 
-      - name: 校验源码目录，清除git残留脏仓库
+      - name: 校验源码目录
         run: |
           if [ -d openwrt ]; then
             cd openwrt
             REMOTE_URL=$(git remote get-url origin)
             CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
             if [[ "${REMOTE_URL}" != "${{ env.REPO_URL }}" || "${CURRENT_BRANCH}" != "${{ env.REPO_BRANCH }}" ]]; then
-              echo "⚠️ 现有源码仓库分支/地址不匹配，删除重建"
+              echo "⚠️ 目录分支不匹配，重建源码"
               cd ..
               rm -rf openwrt
             fi
           fi
-
-      - name: 调试-打印上游仓库所有远程分支
-        run: |
-          git ls-remote --heads ${{ env.REPO_URL }}
-
-      - name: 初始化编译环境
-        env:
-          DEBIAN_FRONTEND: noninteractive
-        run: |
-          sudo apt update
-          sudo apt install -y ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
-          bzip2 ccache cmake cpio curl device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
-          git gzip libncurses-dev libssl-dev libxml2-dev make nano pkgconf python3 python3-pip python3-setuptools \
-          rsync sed unzip wget zlib1g-dev
-          sudo timedatectl set-timezone ${{ env.TZ }}
-
-      - name: 配置CCache
-        run: |
-          echo "CCACHE_DIR=${{ github.workspace }}/.ccache" >> $GITHUB_ENV
-          echo "CCACHE_MAXSIZE=10G" >> $GITHUB_ENV
 
       - name: 克隆/更新源码
         run: |
@@ -106,10 +86,8 @@ jobs:
             git clone --depth=1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
           else
             cd openwrt
-            # 全量拉取所有远程分支并清理失效旧分支引用
             git fetch origin --prune
             git reset --hard origin/${{ env.REPO_BRANCH }}
-            # 清理本地未跟踪文件、目录
             git clean -df
           fi
           cd openwrt
@@ -152,19 +130,13 @@ jobs:
           fi
 
           if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
-            echo "================配置变更===================="
-            echo "新增启用包:"
-            comm -13 pkg_ref.txt current_pkg.txt
-            echo "取消启用包:"
-            comm -23 pkg_ref.txt current_pkg.txt
-            echo "============================================"
             if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
               echo "⚠️ 固件配置发生变化，开始编译"
               NEED_BUILD=1
+            elif [ $NEED_BUILD -eq 0 ]; then
+              echo "ℹ️ 首次构建，执行编译"
+              NEED_BUILD=1
             fi
-          elif [ $NEED_BUILD -eq 0 ]; then
-            echo "ℹ️ 首次构建，执行编译"
-            NEED_BUILD=1
           fi
 
           echo "NEED_BUILD=${NEED_BUILD}" >> $GITHUB_ENV
@@ -176,8 +148,7 @@ jobs:
           make defconfig
           find dl -size -1024c -exec rm -f {} \;
           make download -j$(nproc) || make download -j1 V=s
-          find dl -size -1024c -exec rm -f {} \;
-          echo "✅ 源码下载完成"
+          echo "✅ 源码包下载完成"
 
       - name: 编译固件
         id: compile_firm
@@ -188,20 +159,20 @@ jobs:
           LOG=${{ github.workspace }}/build.log
           set -o pipefail
           if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
-            echo "result=ok" >> $GITHUB_OUTPUT
+            echo "result=ok" >> $GITHUB_ENV
           else
             echo "❌ 多线程编译失败，切换单线程重试"
             cat ${LOG}
             if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
-              echo "result=ok" >> $GITHUB_OUTPUT
+              echo "result=ok" >> $GITHUB_ENV
             else
               echo "❌ 编译最终失败"
               exit 1
             fi
           fi
-          echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_OUTPUT
+          echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
 
-      - name: 更新缓存快照（仅编译成功才写入）
+      - name: 更新缓存快照
         if: steps.compile_firm.outputs.result == 'ok'
         run: |
           cp upstream_commit.txt last_commit.txt
@@ -226,7 +197,7 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
-      - name: 生成Release Tag并推送远程Tag
+      - name: 生成Release Tag
         if: steps.compile_firm.outputs.result == 'ok'
         run: |
           TAG_NAME=build-${{ github.run_number }}-$(date +%Y%m%d)
