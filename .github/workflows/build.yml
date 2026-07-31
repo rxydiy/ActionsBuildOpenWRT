@@ -1,7 +1,7 @@
 name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
-  #自动运行：每天早上5点
+  #自动运行：每天早上5点(北京时间)
   schedule:
     - cron: 0 21 * * *
   push:
@@ -163,19 +163,22 @@ jobs:
           THREAD=${{ env.COMPILE_THREAD }}
           LOG=${{ github.workspace }}/build.log
           set -o pipefail
+          RESULT="fail"
           if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
-            echo "result=ok" >> $GITHUB_ENV
+            RESULT="ok"
           else
             echo "❌ 多线程编译失败，切换单线程重试"
             cat ${LOG}
             if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
-              echo "result=ok" >> $GITHUB_ENV
+              RESULT="ok"
             else
               echo "❌ 编译最终失败"
               exit 1
             fi
           fi
-          echo "BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')" >> $GITHUB_ENV
+          BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')
+          echo "result=${RESULT}" >> $GITHUB_OUTPUT
+          echo "BOARD=${BOARD}" >> $GITHUB_OUTPUT
 
       - name: 更新缓存快照
         if: steps.compile_firm.outputs.result == 'ok'
