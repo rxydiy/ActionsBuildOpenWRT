@@ -33,7 +33,6 @@ env:
   COMPILE_THREAD: 2
   CACHE_KEY_VER: v1.2
   TZ: Asia/Shanghai
-  # 统一TAG名称，全局只用这一处定义！杜绝不一致
   TAG_NAME: build-${{ github.run_number }}
   TARGET_DIR: openwrt/bin/targets/mediatek/filogic
 
@@ -55,7 +54,7 @@ jobs:
       - name: 拉取仓库配置文件
         uses: actions/checkout@v6
 
-      - name: 安装OpenWrt编译完整依赖（适配6.6内核mt798x）
+      - name: 安装OpenWrt编译完整依赖
         run: |
           sudo apt update
           sudo apt install -y build-essential libncurses-dev gawk flex bison quilt libssl-dev xsltproc libxml2-utils \
@@ -225,7 +224,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 创建Release发布（仅mediatek/filogic一级目录文件，过滤packages所有ipk）
+      - name: 创建Release发布
         if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
         env:
