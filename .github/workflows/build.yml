@@ -211,6 +211,15 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
+      - name: Create & Push Git Tag
+        run: |
+          git config --global user.name "CI Builder"
+          git config --global user.email "builder@actions.local"
+          git tag -f ${{ env.TAG_NAME }}
+          git push -f origin ${{ env.TAG_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 创建Release发布（仅mediatek/filogic全部文件）
         if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
@@ -222,3 +231,38 @@ jobs:
           files: openwrt/bin/targets/mediatek/filogic/**
           generate_release_notes: true
           overwrite: true
+
+      - name: Retain latest 5 releases, remove older releases & tags
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const reserveCount = 5;
+            console.log(`设置保留最新 ${reserveCount} 个正式Release`);
+
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner, repo, per_page: 100
+            });
+
+            const validReleases = releases
+              .filter(item => !item.draft)
+              .sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+
+            console.log(`当前正式Release总数：${validReleases.length}`);
+            const removeList = validReleases.slice(reserveCount);
+            console.log(`待删除数量：${removeList.length}`);
+
+            for (const release of removeList) {
+              console.log(`开始删除 Release: ${release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner, repo, release_id: release.id
+              });
+              try {
+                await github.rest.git.deleteRef({
+                  owner, repo, ref: `tags/${release.tag_name}`
+                });
+                console.log(`标签 ${release.tag_name} 删除成功`);
+              } catch (err) {
+                console.log(`标签 ${release.tag_name} 删除警告：`, err.message);
+              }
+            }
