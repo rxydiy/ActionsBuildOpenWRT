@@ -1,7 +1,8 @@
 name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
-  #自动运行：每天早上5点(北京时间)
+  # 自动运行：每天早上5点(北京时间)
+  # GitHub cron使用UTC时区，UTC21:00 = 北京时间05:00
   schedule:
     - cron: 0 21 * * *
   push:
@@ -51,10 +52,11 @@ jobs:
       - name: 拉取仓库配置文件
         uses: actions/checkout@v6
 
-      - name: 安装OpenWrt编译系统依赖（修复ncurses缺失报错）
+      - name: 安装OpenWrt编译完整依赖（适配6.6内核mt798x）
         run: |
           sudo apt update
-          sudo apt install -y build-essential libncurses-dev gawk flex bison quilt libssl-dev xsltproc libxml2-utils
+          sudo apt install -y build-essential libncurses-dev gawk flex bison quilt libssl-dev xsltproc libxml2-utils \
+          zstd device-tree-compiler python3 python3-ply python3-docutils libelf-dev ccache
 
       - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
@@ -121,12 +123,13 @@ jobs:
         id: judge_build
         run: |
           NEED_BUILD=0
-          FORCE=${{ github.event.inputs.force_build || false }}
+          FORCE=${{ github.event.inputs.force_build }}
           if [[ "$FORCE" == "true" ]]; then
             echo "⚠️ 手动强制编译开启"
             NEED_BUILD=1
           fi
 
+          # 上游源码更新
           if [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
             if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
               echo "⚠️ 上游源码更新，触发编译"
@@ -134,13 +137,16 @@ jobs:
             fi
           fi
 
-          if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
-            if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
-              echo "⚠️ 固件配置发生变化，开始编译"
-              NEED_BUILD=1
-            elif [ $NEED_BUILD -eq 0 ]; then
+          # 配置文件变更
+          if [ $NEED_BUILD -eq 0 ]; then
+            if [ ! -f pkg_ref.txt ]; then
               echo "ℹ️ 首次构建，执行编译"
               NEED_BUILD=1
+            elif ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
+              echo "⚠️ 固件配置发生变化，开始编译"
+              NEED_BUILD=1
+            else
+              echo "✅ 源码与配置无变更，跳过编译"
             fi
           fi
 
@@ -195,7 +201,7 @@ jobs:
           path: build.log
           retention-days: 7
 
-      - name: 上传固件文件
+      - name: 上传固件文件（Artifact）
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/upload-artifact@v4
         with:
@@ -205,23 +211,14 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
-      - name: 生成Release Tag
-        if: steps.compile_firm.outputs.result == 'ok'
-        run: |
-          TAG_NAME=build-${{ github.run_number }}-$(date +%Y%m%d)
-          echo "TAG_NAME=${TAG_NAME}" >> $GITHUB_ENV
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -f ${TAG_NAME}
-          git push -f origin ${TAG_NAME}
-
-      - name: 创建Release发布
+      - name: 创建Release发布（仅mediatek/filogic全部文件）
         if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG_NAME }}
-          name: MT798x 6.6内核自动构建 ${{ github.run_number }}
-          openwrt/bin/targets/mediatek/filogic/**
-          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: build-${{ github.run_number }}-$(date +%Y%m%d)
+          name: MT798x 6.6内核自动构建 ${{ github.run_number }}
+          files: openwrt/bin/targets/mediatek/filogic/**
+          generate_release_notes: true
+          overwrite: true
