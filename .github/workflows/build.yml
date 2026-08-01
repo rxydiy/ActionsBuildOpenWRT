@@ -33,6 +33,8 @@ env:
   COMPILE_THREAD: 2
   CACHE_KEY_VER: v1.2
   TZ: Asia/Shanghai
+  # 统一TAG名称，全局只用这一处定义！杜绝不一致
+  TAG_NAME: build-${{ github.run_number }}
 
 jobs:
   build:
@@ -211,7 +213,9 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
+      # ========== 修复：仅编译成功才创建推送Tag ==========
       - name: Create & Push Git Tag
+        if: steps.compile_firm.outputs.result == 'ok'
         run: |
           git config --global user.name "CI Builder"
           git config --global user.email "builder@actions.local"
@@ -220,19 +224,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ========== Release，统一使用全局TAG_NAME ==========
       - name: 创建Release发布（仅mediatek/filogic全部文件）
         if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: build-${{ github.run_number }}-$(date +%Y%m%d)
+          tag_name: ${{ env.TAG_NAME }}
           name: MT798x 6.6内核自动构建 ${{ github.run_number }}
           files: openwrt/bin/targets/mediatek/filogic/**
           generate_release_notes: true
           overwrite: true
 
+      # ========== 仅编译成功才执行清理旧版本 ==========
       - name: Retain latest 5 releases, remove older releases & tags
+        if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/github-script@v7
         with:
           script: |
