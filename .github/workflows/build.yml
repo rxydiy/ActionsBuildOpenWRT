@@ -221,7 +221,7 @@ jobs:
         with:
           tag_name: ${{ env.TAG_NAME }}
           name: MT798x 6.6内核自动构建 ${{ github.run_number }}
-          files: openwrt/bin/targets/**/*sysupgrade.bin
+          openwrt/bin/targets/mediatek/filogic/**
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
