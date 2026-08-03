@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt
+name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   # 自动运行：每天早上5点(北京时间)
@@ -34,8 +34,7 @@ env:
   CACHE_KEY_VER: v1.2
   TZ: Asia/Shanghai
   TARGET_DIR: openwrt/bin/targets/mediatek/filogic
-  # 根据你的 diy-part1.sh 自动整理好的插件列表
-  PLUGIN_LIST: >
+  PLUGIN_LIST: |
     "https://github.com/gdy666/luci-app-lucky.git;main"
     "https://github.com/sirpdboy/luci-app-taskplan.git;master"
     "https://github.com/kenzok8/small.git;main"
@@ -119,15 +118,21 @@ jobs:
           cd openwrt
           git rev-parse HEAD > ../upstream_commit.txt
 
-      # ========== 检测第三方插件远程最新commit，打印变更详情 ==========
+      # ========== 检测第三方插件远程最新commit【修复数组语法】 ==========
       - name: 检测第三方插件远程最新commit
         id: check_plugins
         run: |
           > plugins_remote.txt
           > plugin_changed_list.txt
           NEED_PLUGIN_UPDATE=0
-          for item in ${{ env.PLUGIN_LIST }}; do
-            IFS=';' read repo_url branch <<< "$item"
+
+          # 读取插件列表进入数组，解决;符号语法报错
+          readarray -t plugin_arr <<<"${{ env.PLUGIN_LIST }}"
+
+          for item in "${plugin_arr[@]}"; do
+            # 去除首尾引号
+            raw_item=$(echo "$item" | sed -e 's/^"//' -e 's/"$//')
+            IFS=';' read repo_url branch <<< "$raw_item"
             echo "检测仓库: $repo_url 分支:$branch"
             remote_commit=$(timeout 10 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null | awk '{print $1}')
             if [ -z "$remote_commit" ]; then
