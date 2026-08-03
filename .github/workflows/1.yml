@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt-MT798x-6.6编译
+name: OpenWrt-ImmortalWrt
 
 on:
   # 自动运行：每天早上5点(北京时间)
