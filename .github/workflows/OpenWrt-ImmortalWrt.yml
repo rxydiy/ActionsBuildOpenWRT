@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt-MT798x-6.6编译
+name: OpenWrt-ImmortalWrt
 
 on:
   # UTC 21:00 = 北京时间05:00
