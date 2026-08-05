@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt
+name: ceshi
 
 on:
   schedule:
