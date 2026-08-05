@@ -112,115 +112,114 @@ jobs:
       - name: 检测第三方插件远程最新commit
         id: check_plugins
         run: |
-        > plugins_remote.txt
-> plugin_changed_list.txt
-NEED_PLUGIN_UPDATE=0
+          > plugins_remote.txt
+          > plugin_changed_list.txt
+          NEED_PLUGIN_UPDATE=0
 
-# 插件数组
-plugin_list=(
-  "https://github.com/kenzok8/small.git;main"
-  "https://github.com/whzhni1/luci-app-vnt2.git;main"
-)
+          # 插件数组
+          plugin_list=(
+            "https://github.com/kenzok8/small.git;main"
+            "https://github.com/whzhni1/luci-app-vnt2.git;main"
+          )
 
-for item in "${plugin_list[@]}"; do
-  IFS=';' read repo_url branch <<< "$item"
-  echo "检测仓库: $repo_url 分支:$branch"
-  remote_commit=""
+          for item in "${plugin_list[@]}"; do
+            IFS=';' read repo_url branch <<< "$item"
+            echo "检测仓库: $repo_url 分支:$branch"
+            remote_commit=""
 
-  # 最多3次重试，关闭git交互，超时15s
-  for retry in {1..3}; do
-    remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null | awk '{print $1}')
-    if [ -n "$remote_commit" ]; then
-      break
-    fi
-    echo "🔄 第${retry}次获取commit失败，重试..."
-    sleep 3
-  done
-
-  # 网络获取失败处理逻辑
-  if [ -z "$remote_commit" ]; then
-    echo "⚠️ 网络获取插件commit失败: $repo_url $branch"
-    # 如果存在上一轮快照，尝试复用上一轮保存的commit，不触发更新
-    if [ -f plugins_last.txt ]; then
-        old_line=$(grep "^${repo_url};${branch};" plugins_last.txt || true)
-        if [ -n "$old_line" ]; then
-            remote_commit=$(echo "$old_line" | cut -d';' -f3)
-            echo "ℹ️ 复用上一轮快照commit: ${remote_commit}"
-            echo "$repo_url;$branch;${remote_commit};NETWORK_FALLBACK" >> plugins_remote.txt
-            echo "$repo_url;$branch;NETWORK_FALLBACK(复用旧快照)" >> plugin_changed_list.txt
-            continue
-        fi
-    fi
-    # 首次构建网络异常：仅打印警告，不强制触发编译
-    echo "🛑 首次拉取插件网络异常，暂时跳过插件更新检测"
-    echo "$repo_url;$branch;FIRST_NET_ERROR_SKIP" >> plugin_changed_list.txt
-    continue
-  fi
-  echo "$repo_url;$branch;$remote_commit" >> plugins_remote.txt
-done
-
-if [ -f plugins_last.txt ]; then
-  # 对比旧快照，查找更新/移除插件
-  while IFS= read -r line; do
-      repo=$(echo "$line" | cut -d';' -f1)
-      branch=$(echo "$line" | cut -d';' -f2)
-      old_hash=$(echo "$line" | cut -d';' -f3)
-      new_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
-      # 关键优化：仅当前插件列表内的插件，才判定移除；已主动删除的插件忽略
-      if [ -z "$new_line" ]; then
-          exist_in_list=0
-          for p in "${plugin_list[@]}"; do
-              p_repo=${p%;*}; p_br=${p#*;}
-              if [[ $p_repo == "$repo" && $p_br == "$branch" ]]; then
-                  exist_in_list=1
-                  break
+            # 最多3次重试，关闭git交互，超时15s
+            for retry in {1..3}; do
+              remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null | awk '{print $1}')
+              if [ -n "$remote_commit" ]; then
+                break
               fi
+              echo "🔄 第${retry}次获取commit失败，重试..."
+              sleep 3
+            done
+
+            # 网络获取失败处理逻辑
+            if [ -z "$remote_commit" ]; then
+              echo "⚠️ 网络获取插件commit失败: $repo_url $branch"
+              # 如果存在上一轮快照，尝试复用上一轮保存的commit，不触发更新
+              if [ -f plugins_last.txt ]; then
+                  old_line=$(grep "^${repo_url};${branch};" plugins_last.txt || true)
+                  if [ -n "$old_line" ]; then
+                      remote_commit=$(echo "$old_line" | cut -d';' -f3)
+                      echo "ℹ️ 复用上一轮快照commit: ${remote_commit}"
+                      # plugins_remote.txt 只写标准三列，NETWORK_FALLBACK仅写入plugin_changed_list.txt
+                      echo "$repo_url;$branch;${remote_commit}" >> plugins_remote.txt
+                      echo "$repo_url;$branch;NETWORK_FALLBACK(复用旧快照)" >> plugin_changed_list.txt
+                      continue
+                  fi
+              fi
+              # 首次构建网络异常：仅打印警告，不强制触发编译
+              echo "🛑 首次拉取插件网络异常，暂时跳过插件更新检测"
+              echo "$repo_url;$branch;FIRST_NET_ERROR_SKIP" >> plugin_changed_list.txt
+              continue
+            fi
+            echo "$repo_url;$branch;$remote_commit" >> plugins_remote.txt
           done
-          if [[ $exist_in_list -eq 1 ]]; then
-              echo "⚠️ 插件 $repo $branch 在上一轮快照存在，本轮缺失"
-              NEED_PLUGIN_UPDATE=1
-              echo "$repo;$branch;REMOVE" >> plugin_changed_list.txt
+
+          if [ -f plugins_last.txt ]; then
+            # 对比旧快照，查找更新/移除插件
+            while IFS= read -r line; do
+                repo=$(echo "$line" | cut -d';' -f1)
+                branch=$(echo "$line" | cut -d';' -f2)
+                old_hash=$(echo "$line" | cut -d';' -f3)
+                new_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
+                # 关键优化：仅当前插件列表内的插件，才判定移除；已主动删除的插件忽略
+                if [ -z "$new_line" ]; then
+                    exist_in_list=0
+                    for p in "${plugin_list[@]}"; do
+                        p_repo=${p%;*}; p_br=${p#*;}
+                        if [[ $p_repo == "$repo" && $p_br == "$branch" ]]; then
+                            exist_in_list=1
+                            break
+                        fi
+                    done
+                    if [[ $exist_in_list -eq 1 ]]; then
+                        echo "⚠️ 插件 $repo $branch 在上一轮快照存在，本轮缺失"
+                        NEED_PLUGIN_UPDATE=1
+                        echo "$repo;$branch;REMOVE" >> plugin_changed_list.txt
+                    else
+                        echo "ℹ️ 主动移除插件 $repo，忽略变更检测"
+                    fi
+                    continue
+                fi
+                new_hash=$(echo "$new_line" | cut -d';' -f3)
+                if [[ "$old_hash" != "$new_hash" ]]; then
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  echo "✅【插件检测到更新】$repo"
+                  echo "分支: $branch"
+                  echo "旧HASH: $old_hash"
+                  echo "新HASH: $new_hash"
+                  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                  NEED_PLUGIN_UPDATE=1
+                  echo "$repo;$branch;$old_hash->$new_hash" >> plugin_changed_list.txt
+                fi
+            done < plugins_last.txt
+
+            # 查找新增插件
+            while IFS= read -r line; do
+              repo=$(echo "$line" | cut -d';' -f1)
+              branch=$(echo "$line" | cut -d';' -f2)
+              if ! grep -q "^${repo};${branch};" plugins_last.txt; then
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "✅【新增插件】$repo 分支:$branch"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                NEED_PLUGIN_UPDATE=1
+                echo "$repo;$branch;NEW_ADD" >> plugin_changed_list.txt
+              fi
+            done < plugins_remote.txt
+
+            if [ $NEED_PLUGIN_UPDATE -eq 0 ]; then
+              echo "✅ 所有插件无更新"
+            fi
           else
-              echo "ℹ️ 主动移除插件 $repo，忽略变更检测"
+            echo "ℹ️ 首次运行，无插件历史快照，暂不开启插件变更检测"
+            NEED_PLUGIN_UPDATE=0
           fi
-          continue
-      fi
-      new_hash=$(echo "$new_line" | cut -d';' -f3)
-      # 去掉NETWORK_FALLBACK标记字段
-      new_hash=${new_hash%;NETWORK_FALLBACK}
-      if [[ "$old_hash" != "$new_hash" ]]; then
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✅【插件检测到更新】$repo"
-        echo "分支: $branch"
-        echo "旧HASH: $old_hash"
-        echo "新HASH: $new_hash"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        NEED_PLUGIN_UPDATE=1
-        echo "$repo;$branch;$old_hash->$new_hash" >> plugin_changed_list.txt
-      fi
-  done < plugins_last.txt
-
-  # 查找新增插件
-  while IFS= read -r line; do
-    repo=$(echo "$line" | cut -d';' -f1)
-    branch=$(echo "$line" | cut -d';' -f2)
-    if ! grep -q "^${repo};${branch};" plugins_last.txt; then
-      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      echo "✅【新增插件】$repo 分支:$branch"
-      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-      NEED_PLUGIN_UPDATE=1
-      echo "$repo;$branch;NEW_ADD" >> plugin_changed_list.txt
-    fi
-  done < plugins_remote.txt
-
-  if [ $NEED_PLUGIN_UPDATE -eq 0 ]; then
-    echo "✅ 所有插件无更新"
-  fi
-else
-  echo "ℹ️ 首次运行，无插件历史快照，暂不开启插件变更检测"
-  NEED_PLUGIN_UPDATE=0
-fi
-echo "NEED_PLUGIN_UPDATE=${NEED_PLUGIN_UPDATE}" >> $GITHUB_ENV
+          echo "NEED_PLUGIN_UPDATE=${NEED_PLUGIN_UPDATE}" >> $GITHUB_ENV
 
       - name: 执行 diy-part1.sh
         run: |
