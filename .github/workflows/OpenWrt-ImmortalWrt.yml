@@ -2,7 +2,7 @@ name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   schedule:
-    # UTC时间23点 = 北京时间次日7点，如需北京时间23点改为 cron: 0 15 * * *
+    # UTC 23点 = 北京时间次日早上7点；想要北京时间23点启动改为 cron: 0 15 * * *
     - cron: 0 23 * * *
   push:
     paths:
@@ -13,12 +13,12 @@ on:
   workflow_dispatch:
     inputs:
       force_build:
-        description: 强制编译（无视变更检测）
+        description: 强制编译（无视配置/源码变更检测）
         required: false
         default: false
         type: boolean
       clean_cache:
-        description: 清空缓存
+        description: 清空编译缓存
         required: false
         default: false
         type: boolean
@@ -39,24 +39,24 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     steps:
-      - name: 拉取仓库源码
-        uses: actions/checkout@main
+      - name: 拉取仓库配置文件
+        uses: actions/checkout@v4
 
-      - name: 清理缓存(可选)
+      - name: 清空CCache缓存（手动触发）
         if: github.event.inputs.clean_cache == 'true'
         run: |
           rm -rf ~/.cache/openwrt_ccache
-          echo "缓存已清空"
+          echo "✅ 编译缓存已清理完毕"
 
-      - name: 安装编译依赖(修复python3-distutils报错)
+      - name: 安装OpenWrt全套编译依赖（修复Python报错）
         run: |
           env APT_LISTCHANGES_FRONTEND=none sudo apt update -qq
           env APT_LISTCHANGES_FRONTEND=none sudo apt install -y \
             build-essential clang flex bison g++ gawk \
             gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
-            python3-stdlib-extensions rsync unzip zlib1g-dev file wget
+            python3 rsync unzip zlib1g-dev file wget
 
-      - name: 克隆/更新ImmortalWrt源码
+      - name: 克隆/更新ImmortalWrt上游源码
         run: |
           if [ ! -d openwrt ]; then
             git clone --depth=1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
@@ -68,7 +68,7 @@ jobs:
           cd openwrt
           git rev-parse HEAD > ../upstream_commit.txt
 
-      - name: 加载ccache编译缓存
+      - name: 加载CCache编译缓存加速
         uses: actions/cache@v4
         with:
           path: ~/.cache/openwrt_ccache
@@ -76,12 +76,12 @@ jobs:
           restore-keys: |
             ${{ env.CACHE_KEY_VER }}-ccache-
 
-      - name: 执行diy-part1.sh自定义脚本
+      - name: 执行第一阶段DIY脚本 diy-part1.sh
         run: |
           chmod +x ${{ env.DIY_P1_SH }}
           ./${{ env.DIY_P1_SH }}
 
-      - name: 导入.config配置并对比插件变更
+      - name: 对比插件配置&上游源码，判断是否需要编译
         run: |
           cd openwrt
           cp ../${{ env.CONFIG_FILE }} .config
@@ -92,55 +92,55 @@ jobs:
           # 检测上游源码是否更新
           if [ -f pkg_ref.txt ] && [ -f upstream_commit.txt ] && [ -f old_commit.txt ]; then
             if ! diff -q upstream_commit.txt old_commit.txt; then
-              echo "⚠️ 上游源码更新，强制编译"
+              echo "⚠️ 上游源码更新，开启强制编译"
               NEED_BUILD=1
             fi
           fi
 
-          # 检测插件配置是否修改
+          # 检测插件配置文件是否修改
           if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
             if diff -q current_pkg.txt pkg_ref.txt; then
-              echo "✅ 插件配置无变更，停止编译"
+              echo "✅ 插件配置无任何变更，终止本次编译"
               echo "NEED_BUILD=0" >> $GITHUB_ENV
               exit 0
             else
-              echo "⚠️ 插件配置发生变更，开始编译"
+              echo "⚠️ 插件配置发生修改，开始编译"
               NEED_BUILD=1
             fi
           fi
 
-          # 手动触发强制编译开关
+          # 手动勾选强制编译开关
           if [ "${{ github.event.inputs.force_build }}" == "true" ]; then
-            echo "🔴 开启强制编译"
+            echo "🔴 用户开启强制编译模式"
             NEED_BUILD=1
           fi
 
           echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
-          # 保存本次配置记录用于下次对比
+          # 保存本次对比记录，用于下一次检测
           cp ../current_pkg.txt ../pkg_ref.txt
           cp ../upstream_commit.txt ../old_commit.txt
 
-      - name: 配置feeds并更新
+      - name: 更新&安装Feeds插件源
         if: env.NEED_BUILD == 1
         run: |
           cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: 执行diy-part2.sh自定义脚本
+      - name: 执行第二阶段DIY脚本 diy-part2.sh
         if: env.NEED_BUILD == 1
         run: |
           chmod +x ../${{ env.DIY_P2_SH }}
           cd openwrt
           ../${{ env.DIY_P2_SH }}
 
-      - name: 预编译配置
+      - name: 加载配置
         if: env.NEED_BUILD == 1
         run: |
           cd openwrt
           make defconfig
 
-      - name: 开始编译固件
+      - name: 编译固件
         if: env.NEED_BUILD == 1
         run: |
           cd openwrt
@@ -148,9 +148,9 @@ jobs:
           export PATH="/usr/lib/ccache:$PATH"
           make -j${{ env.COMPILE_THREAD }} V=s
 
-      - name: 上传编译成品固件
+      - name: 上传编译生成固件包
         if: env.NEED_BUILD == 1
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt-Firmware
+          name: ImmortalWrt-MT798x固件
           path: ${{ env.TARGET_DIR }}
