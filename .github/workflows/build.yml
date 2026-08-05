@@ -112,7 +112,7 @@ jobs:
       - name: 检测第三方插件远程最新commit
         id: check_plugins
         run: |
-> plugins_remote.txt
+        > plugins_remote.txt
 > plugin_changed_list.txt
 NEED_PLUGIN_UPDATE=0
 
