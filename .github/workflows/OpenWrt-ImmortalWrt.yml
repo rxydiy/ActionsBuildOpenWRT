@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt-MT798x-6.6编译
+1name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
   schedule:
