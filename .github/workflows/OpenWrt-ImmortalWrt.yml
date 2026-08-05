@@ -130,7 +130,7 @@ jobs:
       - name: 执行第二阶段DIY脚本 diy-part2.sh
         if: env.NEED_BUILD == 1
         run: |
-          chmod +x ../${{ env.DIY_P2_SH }}
+          chmod +x ${{ env.DIY_P2_SH }}
           cd openwrt
           ../${{ env.DIY_P2_SH }}
 
