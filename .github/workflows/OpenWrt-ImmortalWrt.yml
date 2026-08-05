@@ -1,156 +1,91 @@
-name: OpenWrt-ImmortalWrt-MT798x-6.6编译
+# 插件清单 和你diy-part1保持一致
+PLUGINS=(
+"https://github.com/gdy666/luci-app-lucky.git;main"
+"https://github.com/sirpdboy/luci-app-taskplan.git;master"
+"https://github.com/kenzok8/small.git;main"
+"https://github.com/whzhni1/luci-app-vnt2.git;main"
+"https://github.com/jcorporation/myMPD.git;master"
+)
 
-on:
-  schedule:
-    # UTC 23点 = 北京时间次日早上7点；想要北京时间23点启动改为 cron: 0 15 * * *
-    - cron: 0 23 * * *
-  push:
-    paths:
-      - OpenWrt-immortalwrt.config
-      - diy-part1.sh
-      - diy-part2.sh
-      - files/**
-  workflow_dispatch:
-    inputs:
-      force_build:
-        description: 强制编译（无视配置/源码变更检测）
-        required: false
-        default: false
-        type: boolean
-      clean_cache:
-        description: 清空编译缓存
-        required: false
-        default: false
-        type: boolean
+> plugins_remote.txt
+> plugin_changed_list.txt
+NEED_PLUGIN_UPDATE=0
 
-env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
-  REPO_BRANCH: openwrt-24.10-6.6
-  CONFIG_FILE: OpenWrt-immortalwrt.config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  COMPILE_THREAD: 2
-  CACHE_KEY_VER: v1.2
-  TZ: Asia/Shanghai
-  TARGET_DIR: openwrt/bin/targets/mediatek/filogic
-  NEED_PLUGIN_UPDATE: 1
+# 获取当前远程所有插件最新commit
+for item in "${PLUGINS[@]}"; do
+  IFS=';' read repo_url branch <<< "$item"
+  echo "检测仓库: $repo_url 分支:$branch"
 
-jobs:
-  build:
-    runs-on: ubuntu-24.04
-    steps:
-      - name: 拉取仓库配置文件
-        uses: actions/checkout@v4
+  # 增加3次重试 + timeout 12秒
+  remote_commit=""
+  for retry in {1..3}; do
+    remote_commit=$(timeout 12 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null | awk '{print $1}')
+    if [[ -n "$remote_commit" ]]; then
+      break
+    fi
+    echo "🔄 第${retry}次重试获取commit $repo_url $branch"
+    sleep 2
+  done
 
-      - name: 清空CCache缓存（手动触发）
-        if: github.event.inputs.clean_cache == 'true'
-        run: |
-          rm -rf ~/.cache/openwrt_ccache
-          echo "✅ 编译缓存已清理完毕"
+  if [[ -z "$remote_commit" ]]; then
+    echo "❌ 获取插件commit失败: $repo_url $branch，本次【不强制判定更新】，跳过对比"
+    continue
+  fi
+  echo "${repo_url};${branch};${remote_commit}" >> plugins_remote.txt
+done
 
-      - name: 安装OpenWrt全套编译依赖（修复Python报错）
-        run: |
-          env APT_LISTCHANGES_FRONTEND=none sudo apt update -qq
-          env APT_LISTCHANGES_FRONTEND=none sudo apt install -y \
-            build-essential clang flex bison g++ gawk \
-            gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev \
-            python3 rsync unzip zlib1g-dev file wget
+# 判断是否存在历史快照
+if [[ ! -f plugins_last.txt ]]; then
+  echo "ℹ️ 首次插件快照，触发编译"
+  NEED_PLUGIN_UPDATE=1
+  echo "FIRST_INIT;;FIRST_BUILD" >> plugin_changed_list.txt
+  cp plugins_remote.txt plugins_last.txt
+else
+  # 对比已有插件变更
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    repo=$(echo "$line" | cut -d';' -f1)
+    branch=$(echo "$line" | cut -d';' -f2)
+    old_hash=$(echo "$line" | cut -d';' -f3)
 
-      - name: 克隆/更新ImmortalWrt上游源码
-        run: |
-          if [ ! -d openwrt ]; then
-            git clone --depth=1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
-          else
-            cd openwrt
-            git fetch origin ${{ env.REPO_BRANCH }}
-            git reset --hard origin/${{ env.REPO_BRANCH }}
-          fi
-          cd openwrt
-          git rev-parse HEAD > ../upstream_commit.txt
+    # 在远程列表查找
+    remote_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
+    if [[ -z "$remote_line" ]]; then
+      continue
+    fi
+    new_hash=$(echo "$remote_line" | cut -d';' -f3)
 
-      - name: 加载CCache编译缓存加速
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/openwrt_ccache
-          key: ${{ env.CACHE_KEY_VER }}-ccache-${{ github.sha }}
-          restore-keys: |
-            ${{ env.CACHE_KEY_VER }}-ccache-
+    if [[ "$old_hash" != "$new_hash" ]]; then
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "🔃【插件更新】$repo 分支:$branch"
+      echo "旧commit: $old_hash"
+      echo "新commit: $new_hash"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      NEED_PLUGIN_UPDATE=1
+      echo "$repo;$branch;$old_hash->$new_hash" >> plugin_changed_list.txt
+    fi
+  done < plugins_last.txt
 
-      - name: 执行第一阶段DIY脚本 diy-part1.sh
-        run: |
-          chmod +x ${{ env.DIY_P1_SH }}
-          ./${{ env.DIY_P1_SH }}
+  # 查找新增插件
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    repo=$(echo "$line" | cut -d';' -f1)
+    branch=$(echo "$line" | cut -d';' -f2)
+    if ! grep -q "^${repo};${branch};" plugins_last.txt; then
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      echo "✅【新增插件】$repo 分支:$branch"
+      echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+      NEED_PLUGIN_UPDATE=1
+      echo "$repo;$branch;NEW_ADD" >> plugin_changed_list.txt
+    fi
+  done < plugins_remote.txt
 
-      - name: 对比插件配置&上游源码，判断是否需要编译
-        run: |
-          cd openwrt
-          cp ../${{ env.CONFIG_FILE }} .config
-          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_|CONFIG_COLLECT_)' .config > ../current_pkg.txt
-          touch old_commit.txt
+  # 保存最新快照
+  cp plugins_remote.txt plugins_last.txt
 
-          NEED_BUILD=0
-          # 检测上游源码是否更新
-          if [ -f pkg_ref.txt ] && [ -f upstream_commit.txt ] && [ -f old_commit.txt ]; then
-            if ! diff -q upstream_commit.txt old_commit.txt; then
-              echo "⚠️ 上游源码更新，开启强制编译"
-              NEED_BUILD=1
-            fi
-          fi
+  if [[ $NEED_PLUGIN_UPDATE -eq 0 ]]; then
+    echo "✅ 所有插件无更新"
+  fi
+fi
 
-          # 检测插件配置文件是否修改
-          if [ $NEED_BUILD -eq 0 ] && [ -f pkg_ref.txt ]; then
-            if diff -q current_pkg.txt pkg_ref.txt; then
-              echo "✅ 插件配置无任何变更，终止本次编译"
-              echo "NEED_BUILD=0" >> $GITHUB_ENV
-              exit 0
-            else
-              echo "⚠️ 插件配置发生修改，开始编译"
-              NEED_BUILD=1
-            fi
-          fi
-
-          # 手动勾选强制编译开关
-          if [ "${{ github.event.inputs.force_build }}" == "true" ]; then
-            echo "🔴 用户开启强制编译模式"
-            NEED_BUILD=1
-          fi
-
-          echo "NEED_BUILD=$NEED_BUILD" >> $GITHUB_ENV
-          # 保存本次对比记录，用于下一次检测
-          cp ../current_pkg.txt ../pkg_ref.txt
-          cp ../upstream_commit.txt ../old_commit.txt
-
-      - name: 更新&安装Feeds插件源
-        if: env.NEED_BUILD == 1
-        run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-      - name: 执行第二阶段DIY脚本 diy-part2.sh
-        if: env.NEED_BUILD == 1
-        run: |
-          chmod +x ${{ env.DIY_P2_SH }}
-          cd openwrt
-          ../${{ env.DIY_P2_SH }}
-
-      - name: 加载配置
-        if: env.NEED_BUILD == 1
-        run: |
-          cd openwrt
-          make defconfig
-
-      - name: 编译固件
-        if: env.NEED_BUILD == 1
-        run: |
-          cd openwrt
-          export CCACHE_DIR=~/.cache/openwrt_ccache
-          export PATH="/usr/lib/ccache:$PATH"
-          make -j${{ env.COMPILE_THREAD }} V=s
-
-      - name: 上传编译生成固件包
-        if: env.NEED_BUILD == 1
-        uses: actions/upload-artifact@v4
-        with:
-          name: ImmortalWrt-MT798x固件
-          path: ${{ env.TARGET_DIR }}
+echo "NEED_PLUGIN_UPDATE=${NEED_PLUGIN_UPDATE}" >> $GITHUB_ENV
