@@ -1,8 +1,6 @@
 name: OpenWrt-ImmortalWrt-MT798x-6.6编译
 
 on:
-  # 自动运行：每天早上5点(北京时间)
-  # GitHub cron使用UTC时区，UTC21:00 = 北京时间05:00
   schedule:
     - cron: 0 21 * * *
   push:
@@ -34,13 +32,6 @@ env:
   CACHE_KEY_VER: v1.2
   TZ: Asia/Shanghai
   TARGET_DIR: openwrt/bin/targets/mediatek/filogic
-  # 根据你的 diy-part1.sh 自动整理好的插件列表
-  PLUGIN_LIST: >
-    "https://github.com/gdy666/luci-app-lucky.git;main"
-    "https://github.com/sirpdboy/luci-app-taskplan.git;master"
-    "https://github.com/kenzok8/small.git;main"
-    "https://github.com/whzhni1/luci-app-vnt2.git;main"
-    "https://github.com/jcorporation/myMPD.git;master"
 
 jobs:
   build:
@@ -60,7 +51,6 @@ jobs:
       - name: 拉取仓库配置文件
         uses: actions/checkout@v6
 
-      # 生成北京时间标签 build-20260802
       - name: 生成编译日期标签
         run: |
           echo "BUILD_TAG=build-$(date +%Y%m%d)" >> $GITHUB_ENV
@@ -119,14 +109,23 @@ jobs:
           cd openwrt
           git rev-parse HEAD > ../upstream_commit.txt
 
-      # ========== 检测第三方插件远程最新commit，打印变更详情 ==========
       - name: 检测第三方插件远程最新commit
         id: check_plugins
         run: |
           > plugins_remote.txt
           > plugin_changed_list.txt
           NEED_PLUGIN_UPDATE=0
-          for item in ${{ env.PLUGIN_LIST }}; do
+
+          # 插件数组直接定义在脚本内部，彻底规避环境变量解析错误
+          plugin_list=(
+            "https://github.com/gdy666/luci-app-lucky.git;main"
+            "https://github.com/sirpdboy/luci-app-taskplan.git;master"
+            "https://github.com/kenzok8/small.git;main"
+            "https://github.com/whzhni1/luci-app-vnt2.git;main"
+            "https://github.com/jcorporation/myMPD.git;master"
+          )
+
+          for item in "${plugin_list[@]}"; do
             IFS=';' read repo_url branch <<< "$item"
             echo "检测仓库: $repo_url 分支:$branch"
             remote_commit=$(timeout 10 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null | awk '{print $1}')
@@ -328,7 +327,7 @@ jobs:
           generate_release_notes: true
           overwrite: true
 
-      # ========== 清理旧版本，保留最新5个 ==========
+      # 清理旧Release，保留最新5个
       - name: Retain latest 5 releases, remove older releases & tags
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/github-script@v7
