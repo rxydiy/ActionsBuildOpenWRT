@@ -29,7 +29,7 @@ env:
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   COMPILE_THREAD: 2
-  CACHE_KEY_VER: v1.2
+  CACHE_KEY_VER: v1.3
   TZ: Asia/Shanghai
   TARGET_DIR: openwrt/bin/targets/mediatek/filogic
 
@@ -132,9 +132,9 @@ jobs:
             remote_commit=""
 
             if [[ "$check_type" == "simple" ]]; then
-              # ls‑remote 使用cut -f1按tab切分，直接丢弃refs后缀
+              # 彻底修复hash附带refs字段导致假更新问题
               for retry in {1..3}; do
-                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null || true | cut -f1)
+                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null || true | awk '{print $1}' | tr -d '\r')
                 if [ -n "$remote_commit" ]; then
                   break
                 fi
