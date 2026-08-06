@@ -117,9 +117,9 @@ jobs:
           NEED_PLUGIN_UPDATE=0
 
           # 插件数组格式：repo;branch;check_type
-          # simple: ls‑remote轻量检测；full: clone仓库获取commit（kenzok8/small聚合仓库）
+          # simple: ls‑remote轻量检测；full: clone仓库获取commit
           plugin_list=(
-            "https://github.com/kenzok8/small.git;main;full"
+            "https://github.com/kenzok8/small.git;main;simple"
             "https://github.com/whzhni1/luci-app-vnt2.git;main;simple"
           )
 
@@ -132,9 +132,9 @@ jobs:
             remote_commit=""
 
             if [[ "$check_type" == "simple" ]]; then
-              # 普通仓库 ls‑remote，最多重试3次，超时15s
+              # 普通仓库 ls‑remote，最多重试3次，超时15s，只取hash，清除\r换行
               for retry in {1..3}; do
-                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null || true | awk '{print $1}')
+                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null || true | awk '{print $1}' | tr -d '\r')
                 if [ -n "$remote_commit" ]; then
                   break
                 fi
@@ -142,7 +142,7 @@ jobs:
                 sleep 3
               done
             elif [[ "$check_type" == "full" ]]; then
-              # small聚合仓库：浅克隆拿HEAD commit，最多重试2次
+              # full模式保留，留给真正需要clone的仓库
               for retry in {1..2}; do
                 rm -rf "${TMP_SMALL}"
                 git clone --depth=1 -b "${branch}" "${repo_url}" "${TMP_SMALL}" 2>/dev/null || true
@@ -150,7 +150,7 @@ jobs:
                   remote_commit=$(cd "${TMP_SMALL}"; git rev-parse HEAD)
                   break
                 fi
-                echo "🔄 small仓库clone失败，第${retry}次重试..."
+                echo "🔄 仓库clone失败，第${retry}次重试..."
                 sleep 4
               done
             fi
