@@ -118,11 +118,8 @@ jobs:
 
           # 插件数组直接定义在脚本内部，彻底规避环境变量解析错误
           plugin_list=(
-            "https://github.com/gdy666/luci-app-lucky.git;main"
-            "https://github.com/sirpdboy/luci-app-taskplan.git;master"
-            "https://github.com/kenzok8/small.git;main"
+            "https://github.com/kenzok8/small.git;master"
             "https://github.com/whzhni1/luci-app-vnt2.git;main"
-            "https://github.com/jcorporation/myMPD.git;master"
           )
 
           for item in "${plugin_list[@]}"; do
