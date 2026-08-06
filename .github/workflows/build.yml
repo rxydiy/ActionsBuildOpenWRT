@@ -54,7 +54,7 @@ jobs:
       - name: 生成编译日期标签
         run: |
           echo "BUILD_TAG=build-$(date +%Y%m%d)" >> $GITHUB_ENV
-          echo "BUILD_DATETIME=$(date +%Y-%m-%d %H:%M)" >> $GITHUB_ENV
+          echo "BUILD_DATETIME=$(date +%Y-%m-%d_%H-%M)" >> $GITHUB_ENV
         env:
           TZ: Asia/Shanghai
 
@@ -134,7 +134,7 @@ jobs:
             if [[ "$check_type" == "simple" ]]; then
               # 普通仓库 ls‑remote，最多重试3次，超时15s
               for retry in {1..3}; do
-                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null | awk '{print $1}')
+                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null || true | awk '{print $1}')
                 if [ -n "$remote_commit" ]; then
                   break
                 fi
@@ -145,7 +145,7 @@ jobs:
               # small聚合仓库：浅克隆拿HEAD commit，最多重试2次
               for retry in {1..2}; do
                 rm -rf "${TMP_SMALL}"
-                git clone --depth=1 -b "${branch}" "${repo_url}" "${TMP_SMALL}" 2>/dev/null
+                git clone --depth=1 -b "${branch}" "${repo_url}" "${TMP_SMALL}" 2>/dev/null || true
                 if [ -d "${TMP_SMALL}/.git" ]; then
                   remote_commit=$(cd "${TMP_SMALL}"; git rev-parse HEAD)
                   break
