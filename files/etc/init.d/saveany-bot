@@ -1,0 +1,49 @@
+#!/bin/sh /etc/rc.common
+START=95
+STOP=10
+
+BIN="/usr/bin/saveany-bot"
+PID_FILE="/var/run/saveany-bot.pid"
+
+start() {
+    if [ ! -f "$BIN" ]; then
+        echo "错误：saveany-bot 不存在：$BIN"
+        return 1
+    fi
+    chmod +x "$BIN"
+    echo "正在启动 saveany-bot..."
+    cd /usr/bin && nohup "$BIN" > /dev/null 2>&1 &
+    echo $! > "$PID_FILE"
+    echo "启动成功，PID：$(cat $PID_FILE)"
+}
+
+stop() {
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if kill -0 "$PID" 2>/dev/null; then
+            echo "停止 saveany-bot..."
+            kill "$PID"
+            rm -f "$PID_FILE"
+            echo "已停止"
+        else
+            rm -f "$PID_FILE"
+            echo "进程已退出"
+        fi
+    else
+        echo "服务未运行"
+    fi
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+
+status() {
+    if [ -f "$PID_FILE" ] && kill -0 "$(cat $PID_FILE)" 2>/dev/null; then
+        echo "saveany-bot 正在运行"
+    else
+        echo "saveany-bot 未运行"
+    fi
+}

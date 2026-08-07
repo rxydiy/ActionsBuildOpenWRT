@@ -1,0 +1,4 @@
+0 9 * * */root/transplus/tracker.sh
+
+* */1 * * * /root/transplus/addtkr.sh>/root/transplus/tracker.log
+
