@@ -363,7 +363,15 @@ jobs:
             openwrt/bin/targets/**/*.bin
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
-
+          
+      - name: 上传完整bin目录到Artifact
+        if: steps.compile_firm.outputs.result == 'ok'
+        uses: actions/upload-artifact@v4
+        with:
+          name: All-Bin-Full-Directory
+          path: openwrt/bin
+          retention-days: 14
+          
       - name: 创建Release发布
         if: steps.compile_firm.outputs.result == 'ok'
         uses: softprops/action-gh-release@v2
