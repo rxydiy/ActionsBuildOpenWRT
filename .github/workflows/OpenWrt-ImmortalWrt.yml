@@ -117,7 +117,7 @@ jobs:
           # 插件数组格式：repo;branch;check_type
           # simple: ls‑remote轻量检测；full: clone仓库获取commit
           plugin_list=(
-            "https://github.com/kenzok8/small.git;master;simple"
+            "https://github.com/vernesong/OpenClash.git;master;simple"
             "https://github.com/whzhni1/luci-app-vnt2.git;main;simple"
           )
 
