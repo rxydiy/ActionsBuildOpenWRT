@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt-MT798x-6.6编译
+name: OpenWrt-ImmortalWrt-MT798x-6.6内核
 
 on:
   schedule:
@@ -51,7 +51,7 @@ jobs:
 
       - name: 生成编译日期标签
         run: |
-          echo "BUILD_TAG=build-$(date +%Y%m%d)" >> $GITHUB_ENV
+          echo "BUILD_TAG=build-$(date +%Y%m%d)_ssr-plus" >> $GITHUB_ENV
           echo "BUILD_DATETIME=$(date +%Y-%m-%d_%H-%M)" >> $GITHUB_ENV
         env:
           TZ: Asia/Shanghai
@@ -117,8 +117,9 @@ jobs:
           # 插件数组格式：repo;branch;check_type
           # simple: ls‑remote轻量检测；full: clone仓库获取commit
           plugin_list=(
-            "https://github.com/vernesong/OpenClash.git;master;simple"
+            "https://github.com/fw876/helloworld.git;dev;simple"
             "https://github.com/whzhni1/luci-app-vnt2.git;main;simple"
+            "https://github.com/vernesong/OpenClash.git;master;simple"
           )
 
           TMP_SMALL="./tmp_small_check"
@@ -339,7 +340,7 @@ jobs:
           echo "✅ 全部快照已更新"
 
       - name: 上传插件变更清单
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: env.NEED_BUILD == '1'
         with:
           name: plugin-change-log
@@ -347,7 +348,7 @@ jobs:
           retention-days: 7
 
       - name: 上传编译日志
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         if: env.NEED_BUILD == '1'
         with:
           name: build-log
@@ -356,40 +357,39 @@ jobs:
 
       - name: 上传固件文件（Artifact）
         if: steps.compile_firm.outputs.result == 'ok'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: OpenWrt-Firmware-${{ steps.compile_firm.outputs.BOARD }}
           path: |
             openwrt/bin/targets/**/*.bin
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
-          
+
       - name: 上传完整bin目录到Artifact
         if: steps.compile_firm.outputs.result == 'ok'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: All-Bin-Full-Directory
           path: openwrt/bin
           retention-days: 14
-          
+
       - name: 创建Release发布
         if: steps.compile_firm.outputs.result == 'ok'
-        uses: softprops/action-gh-release@v2
+        uses: ncipollo/release-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          tag_name: ${{ env.BUILD_TAG }}
-          name: MT798x 6.6内核自动构建 ${{ env.BUILD_DATETIME }}
-          files: |
+          tag: ${{ env.BUILD_TAG }}
+          name: MT798x 6.6内核 ${{ env.BUILD_DATETIME }}
+          artifacts: |
             ${{ env.TARGET_DIR }}/*
             !${{ env.TARGET_DIR }}/packages/**/*
-          generate_release_notes: true
-          overwrite: true
+          generateReleaseNotes: true
+          allowUpdates: true
 
-      # 清理旧Release，保留最新5个
       - name: Retain latest 5 releases, remove older releases & tags
         if: steps.compile_firm.outputs.result == 'ok'
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           script: |
             const { owner, repo } = context.repo;
