@@ -115,7 +115,7 @@ jobs:
           NEED_PLUGIN_UPDATE=0
 
           # 插件数组格式：repo;branch;check_type
-          # "仓库地址;分支名;simple/full"，full：完整 clone 仓库拿 commit
+          # simple: ls‑remote轻量检测；full: clone仓库获取commit
           plugin_list=(
             "https://github.com/whzhni1/luci-app-vnt2.git;main;simple"
             "https://github.com/vernesong/OpenClash.git;master;simple"
@@ -125,22 +125,22 @@ jobs:
           rm -rf "${TMP_SMALL}"
 
           for item in "${plugin_list[@]}"; do
-            IFS=';' read repo_url branch check_type <<< "$item"
+            IFS=';' read -r repo_url branch check_type <<< "$item"
             echo "检测仓库: $repo_url 分支:$branch 检测模式:$check_type"
             remote_commit=""
 
             if [[ "$check_type" == "simple" ]]; then
-              # 彻底修复hash附带refs字段导致假更新问题
+              # 只输出hash，丢弃refs引用字段
               for retry in {1..3}; do
-                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" "$branch" 2>/dev/null || true | awk '{print $1}' | tr -d '\r')
-                if [ -n "$remote_commit" ]; then
+                remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" 2>/dev/null \
+                  | awk -v full_ref="refs/heads/${branch}" '$2 == full_ref {print $1}' | tr -d '\r' | head -n1)
+                if [[ -n "$remote_commit" ]]; then
                   break
                 fi
                 echo "🔄 第${retry}次获取commit失败，重试..."
                 sleep 3
               done
             elif [[ "$check_type" == "full" ]]; then
-              # full模式保留，留给真正需要clone的仓库
               for retry in {1..2}; do
                 rm -rf "${TMP_SMALL}"
                 git clone --depth=1 -b "${branch}" "${repo_url}" "${TMP_SMALL}" 2>/dev/null || true
@@ -159,7 +159,8 @@ jobs:
               if [ -f plugins_last.txt ]; then
                   old_line=$(grep "^${repo_url};${branch};" plugins_last.txt || true)
                   if [ -n "$old_line" ]; then
-                      remote_commit=$(echo "$old_line" | cut -d';' -f3)
+                      # 重点修复：旧快照字段只截取第一列hash，丢弃后面refs垃圾内容
+                      remote_commit=$(echo "$old_line" | cut -d';' -f3 | awk '{print $1}')
                       echo "ℹ️ 复用上一轮快照commit: ${remote_commit}"
                       echo "$repo_url;$branch;${remote_commit}" >> plugins_remote.txt
                       echo "$repo_url;$branch;NETWORK_FALLBACK(复用快照)" >> plugin_changed_list.txt
@@ -181,13 +182,16 @@ jobs:
             while IFS= read -r line; do
                 repo=$(echo "$line" | cut -d';' -f1)
                 branch=$(echo "$line" | cut -d';' -f2)
-                old_hash=$(echo "$line" | cut -d';' -f3)
+                # 关键修复！旧hash只拿第一列，剔除旧快照残留的 refs/xxx 后缀
+                old_hash=$(echo "$line" | cut -d';' -f3 | awk '{print $1}')
                 new_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
 
                 if [ -z "$new_line" ]; then
                     exist_in_list=0
                     for p in "${plugin_list[@]}"; do
-                        p_repo=${p%%;*}; p_br=$(echo "$p"|cut -d';' -f2)
+                        p_repo=${p%%;*}
+                        p_rest=${p#*;}
+                        p_br=${p_rest%%;*}
                         if [[ "$p_repo" == "$repo" && "$p_br" == "$branch" ]]; then
                             exist_in_list=1
                             break
@@ -202,7 +206,7 @@ jobs:
                     fi
                     continue
                 fi
-                new_hash=$(echo "$new_line" | cut -d';' -f3)
+                new_hash=$(echo "$new_line" | cut -d';' -f3 | awk '{print $1}')
                 if [[ "$old_hash" != "$new_hash" ]]; then
                   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                   echo "✅【插件检测到更新】$repo"
