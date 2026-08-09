@@ -117,7 +117,6 @@ jobs:
           # 插件数组格式：repo;branch;check_type
           # simple: ls‑remote轻量检测；full: clone仓库获取commit
           plugin_list=(
-            "https://github.com/fw876/helloworld.git;dev;simple"
             "https://github.com/whzhni1/luci-app-vnt2.git;main;simple"
             "https://github.com/vernesong/OpenClash.git;master;simple"
           )
