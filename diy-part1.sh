@@ -1,5 +1,27 @@
 #!/bin/bash
 
+# 创建目录
+mkdir -p files/root
+mkdir -p files/etc/uci-defaults
+
+# 下载 luci-app-openlistui ipk
+wget -O files/root/luci-app-openlistui_v1.0.3_aarch64.ipk https://github.com/drfccv/luci-app-openlistui/releases/download/v1.0.3/luci-app-openlistui_v1.0.3_aarch64.ipk
+
+# 生成自动安装脚本
+cat > files/etc/uci-defaults/99-auto-install-openlistui <<'EOF'
+#!/bin/sh
+# 自动安装 openlistui
+opkg update
+opkg install /root/luci-app-openlistui_v1.0.3_aarch64.ipk
+rm -f /root/luci-app-openlistui_v1.0.3_aarch64.ipk
+/etc/init.d/uhttpd restart
+# 执行完毕删除自身，避免重复执行
+rm -f /etc/uci-defaults/99-auto-install-openlistui
+exit 0
+EOF
+
+chmod +x files/etc/uci-defaults/99-auto-install-openlistui
+
 
 # 拉取第三方插件示例
 git clone  https://github.com/gdy666/luci-app-lucky.git package/lucky   #  lucky 
