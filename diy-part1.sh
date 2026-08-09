@@ -1,31 +1,8 @@
 #!/bin/bash
-# 强制切换到脚本所在源码根目录，避免路径错乱
-cd "$(dirname "${BASH_SOURCE[0]}")" || exit 1
-
-# ========== 新增：自动安装 luci-app-openlistui ipk 开始 ==========
-mkdir -p files/root
-mkdir -p files/etc/uci-defaults
-
-# 下载aarch64版本ipk，带重试超时
-wget --tries=3 --timeout=30 -O files/root/luci-app-openlistui_v1.0.3_aarch64.ipk https://github.com/drfccv/luci-app-openlistui/releases/download/v1.0.3/luci-app-openlistui_v1.0.3_aarch64.ipk
-
-# 生成刷机首次开机自动执行脚本，运行后自删除
-cat > files/etc/uci-defaults/99-auto-install-openlistui <<'EOF'
-#!/bin/sh
-opkg update
-opkg install /root/luci-app-openlistui_v1.0.3_aarch64.ipk
-rm -f /root/luci-app-openlistui_v1.0.3_aarch64.ipk
-/etc/init.d/uhttpd restart
-rm -f /etc/uci-defaults/99-auto-install-openlistui
-exit 0
-EOF
-
-chmod +x files/etc/uci-defaults/99-auto-install-openlistui
-# ========== 新增：自动安装 luci-app-openlistui ipk 结束 ==========
 
 
 # 拉取第三方插件示例
-git clone  https://github.com/gdy666/luci-app-lucky.git package/lucky   #  lucky
+git clone  https://github.com/gdy666/luci-app-lucky.git package/lucky   #  lucky 
 git clone https://github.com/sirpdboy/luci-app-taskplan.git package/luci-app-taskplan               #  定时任务设置
 git clone https://github.com/vernesong/OpenClash.git package/openclash
 # git clone https://github.com/linkease/istore.git package/istore
