@@ -368,13 +368,21 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
-      - name: 上传完整bin目录到Artifact
+      - name: 上传完整bin目录到Artifact（仅Actions可下载，不进Release）
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/upload-artifact@v5
         with:
           name: All-Bin-Full-Directory
           path: openwrt/bin
           retention-days: 14
+
+      - name: Prepare release artifacts（仅提取需要发布到Release的固件，排除packages）
+        if: steps.compile_firm.outputs.result == 'ok'
+        run: |
+          mkdir -p release_out
+          # 只复制target一级的bin、manifest，不进入packages子文件夹
+          find ${{ env.TARGET_DIR }} -maxdepth 1 -type f \( -name "*.bin" -o -name "*.manifest" \) -exec cp {} release_out/ \;
+          ls -la release_out
 
       - name: 创建Release发布
         if: steps.compile_firm.outputs.result == 'ok'
@@ -383,10 +391,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag: ${{ env.BUILD_TAG }}
-          name: MT798x 6.6内核 ${{ env.BUILD_DATETIME }}
-          artifacts: |
-            ${{ env.TARGET_DIR }}/*
-            !${{ env.TARGET_DIR }}/packages/**/*
+          name: MT798x 6.6内核包含passwall ${{ env.BUILD_DATETIME }}
+          artifacts: release_out/*
           generateReleaseNotes: true
           allowUpdates: true
 
