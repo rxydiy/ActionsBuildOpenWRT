@@ -236,7 +236,9 @@ jobs:
               echo "✅ 所有插件无更新"
             fi
           else
-            echo "ℹ️ 首次运行，无历史快照，暂不开启插件变更检测"
+            # ======修复点：首次运行直接生成快照存入文件，下次定时读取======
+            echo "ℹ️ 首次运行，生成初始插件哈希快照，本次不触发插件变更编译"
+            cp plugins_remote.txt plugins_last.txt
             NEED_PLUGIN_UPDATE=0
           fi
 
@@ -376,12 +378,14 @@ jobs:
           path: openwrt/bin
           retention-days: 14
 
-      - name: Prepare release artifacts（仅提取需要发布到Release的固件，排除packages）
+      - name: Prepare release artifacts（打包固件 + config.buildinfo）
         if: steps.compile_firm.outputs.result == 'ok'
         run: |
           mkdir -p release_out
-          # 只复制target一级的bin、manifest，不进入packages子文件夹
+          # 复制固件bin、manifest
           find ${{ env.TARGET_DIR }} -maxdepth 1 -type f \( -name "*.bin" -o -name "*.manifest" \) -exec cp {} release_out/ \;
+          # 复制编译生成的config.buildinfo文件
+          cp openwrt/bin/targets/mediatek/filogic/config.buildinfo release_out/
           ls -la release_out
 
       - name: 创建Release发布
