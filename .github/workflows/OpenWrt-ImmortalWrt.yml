@@ -1,4 +1,4 @@
-name: OpenWrt-ImmortalWrt-MT798x-6.6内核
+name: OpenWrt-ImmortalWrt
 
 on:
   schedule:
@@ -395,7 +395,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag: ${{ env.BUILD_TAG }}
-          name: MT798x 6.6内核包含passwall ${{ env.BUILD_DATETIME }}
+          name: MT798x 6.6内核 ${{ env.BUILD_DATETIME }}
           artifacts: release_out/*
           generateReleaseNotes: true
           allowUpdates: true
