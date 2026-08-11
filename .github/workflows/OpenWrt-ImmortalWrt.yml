@@ -159,7 +159,7 @@ jobs:
               if [ -f plugins_last.txt ]; then
                   old_line=$(grep "^${repo_url};${branch};" plugins_last.txt || true)
                   if [ -n "$old_line" ]; then
-                      old_hash=$(echo "$old_line" | cut -d';' -f3)
+                      old_hash=$(echo "$old_line" | cut -d';' -f3 | awk '{print $1}')
                       remote_commit=${old_hash}
                       echo "ℹ️ 复用上一轮快照commit: ${remote_commit}"
                       echo "$repo_url;$branch;${remote_commit}" >> plugins_remote.txt
@@ -180,7 +180,8 @@ jobs:
             while IFS= read -r line; do
                 repo=$(echo "$line" | cut -d';' -f1)
                 branch=$(echo "$line" | cut -d';' -f2)
-                old_hash=$(echo "$line" | cut -d';' -f3)
+                # 关键修复：自动剔除旧HASH里refs/heads多余字符，只保留哈希
+                old_hash=$(echo "$line" | cut -d';' -f3 | awk '{print $1}')
                 new_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
 
                 if [ -z "$new_line" ]; then
