@@ -68,7 +68,7 @@ jobs:
           rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt plugins_remote.txt plugins_last.txt plugin_changed_list.txt tmp_small_check || true
           echo "✅ 缓存清理完成"
 
-      - name: 恢复编译缓存 dl + ccache
+      - name: 恢复编译缓存 dl + ccache + 插件哈希快照
         uses: actions/cache@v6
         with:
           path: |
@@ -130,7 +130,7 @@ jobs:
             remote_commit=""
 
             if [[ "$check_type" == "simple" ]]; then
-              # 只输出hash，丢弃refs引用字段
+              # 严格仅提取40位Commit Hash，彻底过滤refs/heads/*后缀
               for retry in {1..3}; do
                 remote_commit=$(GIT_TERMINAL_PROMPT=0 timeout 15 git ls-remote --heads "$repo_url" 2>/dev/null \
                   | awk -v full_ref="refs/heads/${branch}" '$2 == full_ref {print $1}' | tr -d '\r' | head -n1)
@@ -159,16 +159,14 @@ jobs:
               if [ -f plugins_last.txt ]; then
                   old_line=$(grep "^${repo_url};${branch};" plugins_last.txt || true)
                   if [ -n "$old_line" ]; then
-                      # 重点修复：旧快照字段只截取第一列hash，丢弃后面refs垃圾内容
-                      remote_commit=$(echo "$old_line" | cut -d';' -f3 | awk '{print $1}')
+                      old_hash=$(echo "$old_line" | cut -d';' -f3)
+                      remote_commit=${old_hash}
                       echo "ℹ️ 复用上一轮快照commit: ${remote_commit}"
                       echo "$repo_url;$branch;${remote_commit}" >> plugins_remote.txt
-                      echo "$repo_url;$branch;NETWORK_FALLBACK(复用快照)" >> plugin_changed_list.txt
                       continue
                   fi
               fi
               echo "🛑 首次拉取网络异常，跳过插件更新检测 $repo_url"
-              echo "$repo_url;$branch;FIRST_NET_ERROR_SKIP" >> plugin_changed_list.txt
               continue
             fi
 
@@ -182,8 +180,7 @@ jobs:
             while IFS= read -r line; do
                 repo=$(echo "$line" | cut -d';' -f1)
                 branch=$(echo "$line" | cut -d';' -f2)
-                # 关键修复！旧hash只拿第一列，剔除旧快照残留的 refs/xxx 后缀
-                old_hash=$(echo "$line" | cut -d';' -f3 | awk '{print $1}')
+                old_hash=$(echo "$line" | cut -d';' -f3)
                 new_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
 
                 if [ -z "$new_line" ]; then
@@ -206,7 +203,7 @@ jobs:
                     fi
                     continue
                 fi
-                new_hash=$(echo "$new_line" | cut -d';' -f3 | awk '{print $1}')
+                new_hash=$(echo "$new_line" | cut -d';' -f3)
                 if [[ "$old_hash" != "$new_hash" ]]; then
                   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                   echo "✅【插件检测到更新】$repo"
@@ -219,25 +216,24 @@ jobs:
                 fi
             done < plugins_last.txt
 
-            # 查找新增插件
+            # 查找新增插件 -> 仅记录日志，不触发更新编译
             while IFS= read -r line; do
               repo=$(echo "$line"|cut -d';' -f1)
               branch=$(echo "$line"|cut -d';' -f2)
               if ! grep -q "^${repo};${branch};" plugins_last.txt; then
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "✅【新增插件】$repo 分支:$branch"
+                echo "ℹ️【新增插件初始化】$repo 分支:$branch 本次不编译，下次变更才触发"
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                NEED_PLUGIN_UPDATE=1
-                echo "$repo;$branch;NEW_ADD" >> plugin_changed_list.txt
+                echo "$repo;$branch;NEW_ADD_INIT" >> plugin_changed_list.txt
               fi
             done < plugins_remote.txt
 
             if [ $NEED_PLUGIN_UPDATE -eq 0 ]; then
-              echo "✅ 所有插件无更新"
+              echo "✅ 所有插件无版本更新"
             fi
           else
-            # ======修复点：首次运行直接生成快照存入文件，下次定时读取======
-            echo "ℹ️ 首次运行，生成初始插件哈希快照，本次不触发插件变更编译"
+            # 第一次运行：初始化快照，绝不触发插件编译
+            echo "ℹ️ 首次运行，生成初始插件哈希快照，本次插件无更新判定"
             cp plugins_remote.txt plugins_last.txt
             NEED_PLUGIN_UPDATE=0
           fi
