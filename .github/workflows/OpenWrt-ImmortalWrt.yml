@@ -284,12 +284,12 @@ jobs:
             NEED_BUILD=1
           fi
 
-          # 配置文件变更
+          # 配置文件变更（核心修复：只丢失last_commit.txt才算首次编译，只丢pkg_ref.txt不强制编译）
           if [ $NEED_BUILD -eq 0 ]; then
-            if [ ! -f pkg_ref.txt ]; then
-              echo "ℹ️ 首次构建，执行编译"
+            if [ ! -f last_commit.txt ]; then
+              echo "ℹ️ 上游源码快照缺失，首次构建，执行编译"
               NEED_BUILD=1
-            elif ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
+            elif [ ! -f pkg_ref.txt ] || ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
               echo "⚠️ 固件配置发生变化，开始编译"
               NEED_BUILD=1
             else
