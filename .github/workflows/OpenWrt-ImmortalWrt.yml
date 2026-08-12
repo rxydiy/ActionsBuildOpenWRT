@@ -366,7 +366,7 @@ jobs:
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
 
-      - name: 上传完整bin目录到Artifact（仅Actions可下载，不进Release）
+      - name: 上传完整bin目录到Artifact
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/upload-artifact@v5
         with:
