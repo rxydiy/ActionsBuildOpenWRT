@@ -162,7 +162,7 @@ jobs:
                       old_hash=$(echo "$old_line" | cut -d';' -f3 | awk '{print $1}')
                       remote_commit=${old_hash}
                       echo "ℹ️ 复用上一轮快照commit: ${remote_commit}"
-                      echo "$repo_url;$branch;${remote_commit}" >> plugins_remote.txt
+                      echo "${repo_url};${branch};${remote_commit}" >> plugins_remote.txt
                       continue
                   fi
               fi
@@ -170,7 +170,7 @@ jobs:
               continue
             fi
 
-            echo "$repo_url;$branch;${remote_commit}" >> plugins_remote.txt
+            echo "${repo_url};${branch};${remote_commit}" >> plugins_remote.txt
           done
 
           rm -rf "${TMP_SMALL}"
@@ -198,7 +198,7 @@ jobs:
                     if [[ $exist_in_list -eq 1 ]]; then
                         echo "⚠️ 插件 $repo $branch 在上一轮快照存在，本轮缺失"
                         NEED_PLUGIN_UPDATE=1
-                        echo "$repo;$branch;REMOVE" >> plugin_changed_list.txt
+                        echo "${repo};${branch};REMOVE" >> plugin_changed_list.txt
                     else
                         echo "ℹ️ 主动移除插件 $repo，忽略变更检测"
                     fi
@@ -213,7 +213,7 @@ jobs:
                   echo "新HASH: $new_hash"
                   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                   NEED_PLUGIN_UPDATE=1
-                  echo "$repo;$branch;${old_hash}->${new_hash}" >> plugin_changed_list.txt
+                  echo "${repo};${branch};${old_hash}->${new_hash}" >> plugin_changed_list.txt
                 fi
             done < plugins_last.txt
 
@@ -225,7 +225,7 @@ jobs:
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 echo "ℹ️【新增插件初始化】$repo 分支:$branch 本次不编译，下次变更才触发"
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "$repo;$branch;NEW_ADD_INIT" >> plugin_changed_list.txt
+                echo "${repo};${branch};NEW_ADD_INIT" >> plugin_changed_list.txt
               fi
             done < plugins_remote.txt
 
@@ -233,12 +233,13 @@ jobs:
               echo "✅ 所有插件无版本更新"
             fi
           else
-            # 第一次运行：初始化快照，绝不触发插件编译
+            # 第一次运行：初始化快照
             echo "ℹ️ 首次运行，生成初始插件哈希快照，本次插件无更新判定"
             cp plugins_remote.txt plugins_last.txt
             NEED_PLUGIN_UPDATE=0
           fi
-
+          # 强制立刻保存插件快照写入工作目录，提前写入缓存，不再只依赖编译成功
+          cp -f plugins_last.txt plugins_last.txt || true
           echo "NEED_PLUGIN_UPDATE=${NEED_PLUGIN_UPDATE}" >> $GITHUB_ENV
 
       - name: 执行 diy-part1.sh
@@ -270,7 +271,7 @@ jobs:
             NEED_BUILD=1
           fi
 
-          # 上游源码更新
+          # 上游源码更新对比
           if [ $NEED_BUILD -eq 0 ] && [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
             if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
               echo "⚠️ 上游源码更新，触发编译"
@@ -284,16 +285,24 @@ jobs:
             NEED_BUILD=1
           fi
 
-          # 配置文件变更（核心修复：只丢失last_commit.txt才算首次编译，只丢pkg_ref.txt不强制编译）
+          # 核心修复：缺失pkg_ref.txt不会强制编译，仅存在时才对比配置
           if [ $NEED_BUILD -eq 0 ]; then
             if [ ! -f last_commit.txt ]; then
-              echo "ℹ️ 上游源码快照缺失，首次构建，执行编译"
-              NEED_BUILD=1
-            elif [ ! -f pkg_ref.txt ] || ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
-              echo "⚠️ 固件配置发生变化，开始编译"
+              echo "ℹ️ 首次构建，源码快照不存在，编译一次生成快照"
               NEED_BUILD=1
             else
-              echo "✅ 源码、插件与配置无变更，跳过编译"
+              if [ -f pkg_ref.txt ]; then
+                if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
+                  echo "⚠️ 固件配置发生修改，执行编译"
+                  NEED_BUILD=1
+                else
+                  echo "✅ 源码、插件、配置全部无变动，终止编译流程"
+                  NEED_BUILD=0
+                fi
+              else
+                echo "ℹ️ 缺少配置快照pkg_ref.txt，跳过配置校验，不强制编译"
+                NEED_BUILD=0
+              fi
             fi
           fi
 
@@ -339,7 +348,7 @@ jobs:
           cp upstream_commit.txt last_commit.txt
           cp current_pkg.txt pkg_ref.txt
           cp plugins_remote.txt plugins_last.txt
-          echo "✅ 全部快照已更新"
+          echo "✅ 全部快照已更新存入缓存"
 
       - name: 上传插件变更清单
         uses: actions/upload-artifact@v5
