@@ -65,7 +65,7 @@ jobs:
       - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
         run: |
-          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt plugins_remote.txt plugins_last.txt plugin_changed_list.txt tmp_small_check || true
+          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt plugins_remote.txt plugins_last.txt plugin_changed_list.txt tmp_small_check || true
           echo "✅ 缓存清理完成"
 
       - name: 恢复编译缓存 dl + ccache + 插件哈希快照
@@ -75,7 +75,6 @@ jobs:
             openwrt/dl
             .ccache
             last_commit.txt
-            pkg_ref.txt
             plugins_last.txt
           key: mt798x-6.6-${{ env.CACHE_KEY_VER }}
           restore-keys: |
@@ -232,14 +231,17 @@ jobs:
             if [ $NEED_PLUGIN_UPDATE -eq 0 ]; then
               echo "✅ 所有插件无版本更新"
             fi
+            # --------修复cp同文件报错--------
+            if ! cmp -s plugins_remote.txt plugins_last.txt;then
+              cp plugins_remote.txt plugins_last.txt
+            fi
           else
             # 第一次运行：初始化快照
             echo "ℹ️ 首次运行，生成初始插件哈希快照，本次插件无更新判定"
             cp plugins_remote.txt plugins_last.txt
             NEED_PLUGIN_UPDATE=0
           fi
-          # 强制立刻保存插件快照写入工作目录，提前写入缓存，不再只依赖编译成功
-          cp -f plugins_last.txt plugins_last.txt || true
+
           echo "NEED_PLUGIN_UPDATE=${NEED_PLUGIN_UPDATE}" >> $GITHUB_ENV
 
       - name: 执行 diy-part1.sh
@@ -255,11 +257,6 @@ jobs:
           cd openwrt
           ../${{ env.DIY_P2_SH }}
           make defconfig
-
-      - name: 导出配置用于变更对比
-        run: |
-          cd openwrt
-          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_)' .config | sort > ../current_pkg.txt
 
       - name: 判断是否启动编译
         id: judge_build
@@ -279,29 +276,24 @@ jobs:
             fi
           fi
 
-          # 第三方插件更新
-          if [ $NEED_BUILD -eq 0 ] && [ ${{ env.NEED_PLUGIN_UPDATE }} -eq 1 ]; then
+          # 第三方插件更新（读取shell环境变量NEED_PLUGIN_UPDATE）
+          if [ $NEED_BUILD -eq 0 ] && [ "${NEED_PLUGIN_UPDATE:-0}" -eq 1 ]; then
             echo "⚠️ 第三方插件存在变更，触发编译"
             NEED_BUILD=1
           fi
 
-          # 核心修复：缺失pkg_ref.txt不会强制编译，仅存在时才对比配置
+          # 使用git检测仓库配置文件真实改动，消除defconfig自动变更误判
           if [ $NEED_BUILD -eq 0 ]; then
             if [ ! -f last_commit.txt ]; then
               echo "ℹ️ 首次构建，源码快照不存在，编译一次生成快照"
               NEED_BUILD=1
             else
-              if [ -f pkg_ref.txt ]; then
-                if ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
-                  echo "⚠️ 固件配置发生修改，执行编译"
-                  NEED_BUILD=1
-                else
-                  echo "✅ 源码、插件、配置全部无变动，终止编译流程"
-                  NEED_BUILD=0
-                fi
-              else
-                echo "ℹ️ 缺少配置快照pkg_ref.txt，跳过配置校验，不强制编译"
+              if git diff --quiet HEAD -- "${CONFIG_FILE}"; then
+                echo "✅ 源码、插件、仓库配置全部无变动，终止编译流程"
                 NEED_BUILD=0
+              else
+                echo "⚠️ 仓库配置文件发生修改，执行编译"
+                NEED_BUILD=1
               fi
             fi
           fi
@@ -346,9 +338,7 @@ jobs:
         if: steps.compile_firm.outputs.result == 'ok'
         run: |
           cp upstream_commit.txt last_commit.txt
-          cp current_pkg.txt pkg_ref.txt
-          cp plugins_remote.txt plugins_last.txt
-          echo "✅ 全部快照已更新存入缓存"
+          echo "✅ 快照已更新存入缓存"
 
       - name: 上传插件变更清单
         uses: actions/upload-artifact@v5
