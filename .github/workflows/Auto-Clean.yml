@@ -8,23 +8,38 @@ on:
   schedule:
     - cron: '0 0 */6 * *'
 
-# 必须单独开放actions写入权限
 permissions:
-  contents: write
   actions: write
+  contents: write
 
 jobs:
   auto_clean:
     runs-on: ubuntu-latest
     steps:
-      - name: 清理Action历史记录，Release/标签不做改动
-        uses: ophub/delete-releases-workflows@main
-        with:
-          gh_token: ${{ secrets.GITHUB_TOKEN }}
-          delete_releases: false
-          delete_tags: false
-          delete_workflows: true
-          # 关键修正：正确参数 workflows_keep_latest
-          workflows_keep_latest: 5
-          # 开启详细日志，运行后看日志确认哪些被删
-          out_log: true
+      - name: 固定每个工作流只保留最新5条运行记录
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEEP_NUM: 5
+        run: |
+          # 列出仓库所有工作流
+          workflows=$(gh api /repos/${{ github.repository }}/actions/workflows | jq -r '.workflows[].id')
+          for wf_id in $workflows; do
+            echo "===== 开始清理工作流ID: $wf_id ====="
+            # 按时间倒序获取所有运行记录ID
+            runs=$(gh api /repos/${{ github.repository }}/actions/workflows/$wf_id/runs --paginate | jq -r '.workflow_runs[].id')
+            run_arr=($runs)
+            total=${#run_arr[@]}
+            echo "总运行记录数量：$total"
+            if (( total > KEEP_NUM )); then
+              # 跳过前N条最新的，删除后面所有旧记录
+              del_runs=("${run_arr[@]:$KEEP_NUM}")
+              for rid in "${del_runs[@]}"; do
+                echo "删除运行记录ID：$rid"
+                gh api -X DELETE /repos/${{ github.repository }}/actions/runs/$rid
+                sleep 0.5
+              done
+              echo "本轮清理完成"
+            else
+              echo "记录不足${KEEP_NUM}条，无需清理"
+            fi
+          done
