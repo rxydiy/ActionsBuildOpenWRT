@@ -8,18 +8,23 @@ on:
   schedule:
     - cron: '0 0 */6 * *'
 
-permissions: write-all
+# 必须单独开放actions写入权限
+permissions:
+  contents: write
+  actions: write
 
 jobs:
   auto_clean:
     runs-on: ubuntu-latest
     steps:
-      - name: 清理Action运行记录，Release与标签完全保留
+      - name: 清理Action历史记录，Release/标签不做改动
         uses: ophub/delete-releases-workflows@main
         with:
           gh_token: ${{ secrets.GITHUB_TOKEN }}
           delete_releases: false
           delete_tags: false
           delete_workflows: true
-          # 每个工作流单独保留最新5条运行记录
-          workflows_keep_count: 5
+          # 关键修正：正确参数 workflows_keep_latest
+          workflows_keep_latest: 5
+          # 开启详细日志，运行后看日志确认哪些被删
+          out_log: true
