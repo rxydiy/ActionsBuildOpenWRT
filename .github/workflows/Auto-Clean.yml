@@ -5,6 +5,8 @@ name: Auto-Clean
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '0 0 */6 * *'
 
 permissions: write-all
 
@@ -12,12 +14,12 @@ jobs:
   auto_clean:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete old Releases and Workflows
+      - name: 清理Action运行记录，Release与标签完全保留
         uses: ophub/delete-releases-workflows@main
         with:
-          gh_token: ${{secrets.GITHUB_TOKEN}}
+          gh_token: ${{ secrets.GITHUB_TOKEN }}
           delete_releases: false
-          releases_keep_latest: 0
-          delete_tags: true
+          delete_tags: false
           delete_workflows: true
-          workflows_keep_day: 0
+          # 每个工作流单独保留最新5条运行记录
+          workflows_keep_count: 5
