@@ -216,17 +216,22 @@ jobs:
                 fi
             done < plugins_last.txt
 
-            # 查找新增插件 -> 仅记录日志，不触发更新编译
+            # ========== 已修改部分：新增插件直接触发编译 + 打印hash ==========
             while IFS= read -r line; do
               repo=$(echo "$line"|cut -d';' -f1)
               branch=$(echo "$line"|cut -d';' -f2)
+              new_hash=$(echo "$line"|cut -d';' -f3)
               if ! grep -q "^${repo};${branch};" plugins_last.txt; then
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "ℹ️【新增插件初始化】$repo 分支:$branch 本次不编译，下次变更才触发"
+                echo "✅【首次新增插件】$repo 分支:$branch，触发编译"
+                echo "初始旧HASH: 不存在(首次初始化)"
+                echo "远程最新HASH: $new_hash"
                 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-                echo "${repo};${branch};NEW_ADD_INIT" >> plugin_changed_list.txt
+                NEED_PLUGIN_UPDATE=1
+                echo "${repo};${branch};FIRST_ADD_TRIGGER->${new_hash}" >> plugin_changed_list.txt
               fi
             done < plugins_remote.txt
+            # ==============================================================
 
             if [ $NEED_PLUGIN_UPDATE -eq 0 ]; then
               echo "✅ 所有插件无版本更新"
@@ -391,7 +396,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag: ${{ env.BUILD_TAG }}
-          name: MT798x 6.6内核 ${{ env.BUILD_DATETIME }}
+          name: OpenWrt-ImmortalWrt ${{ env.BUILD_DATETIME }}
           artifacts: release_out/*
           generateReleaseNotes: true
           allowUpdates: true
