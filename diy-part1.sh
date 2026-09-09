@@ -9,7 +9,7 @@ git clone https://github.com/vernesong/OpenClash.git package/openclash
 
 # git clone https://github.com/kenzok8/small.git package/small
 
-git clone https://github.com/weicaixian86/luci-app-vnt2.git package/vnt
+git clone https://github.com/whzhni1/luci-app-vnt2.git package/vnt
 
 git clone --depth 1 https://github.com/jcorporation/myMPD.git /tmp/tmp_mympd
 mv /tmp/tmp_mympd/contrib/packaging/openwrt package/mympd/
