@@ -60,7 +60,11 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y build-essential libncurses-dev gawk flex bison quilt libssl-dev xsltproc libxml2-utils \
-          zstd device-tree-compiler python3 python3-ply python3-docutils libelf-dev ccache
+          zstd device-tree-compiler python3 python3-ply python3-docutils libelf-dev ccache coreutils
+          # 优先GNU install
+          echo "export PATH=/usr/lib/coreutils/bin:$PATH" >> ~/.bashrc
+          source ~/.bashrc
+          install --version
 
       - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
@@ -321,12 +325,15 @@ jobs:
           THREAD=${{ env.COMPILE_THREAD }}
           LOG=${{ github.workspace }}/build.log
           set -o pipefail
+          # xray cgo 放行
+          export CGO_LDFLAGS_ALLOW='-l:.*'
+          export CGO_LDFLAGS_DISALLOW=''
           RESULT="fail"
           if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
             RESULT="ok"
           else
             echo "❌ 多线程编译失败，切换单线程重试"
-            cat ${LOG}
+            tail -n 300 ${LOG}
             if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
               RESULT="ok"
             else
@@ -346,7 +353,7 @@ jobs:
 
       - name: 上传插件变更清单
         uses: actions/upload-artifact@v5
-        if: env.NEED_BUILD == '1'
+        if: always() && env.NEED_BUILD == '1'
         with:
           name: plugin-change-log
           path: plugin_changed_list.txt
@@ -354,7 +361,7 @@ jobs:
 
       - name: 上传编译日志
         uses: actions/upload-artifact@v5
-        if: env.NEED_BUILD == '1'
+        if: always() && env.NEED_BUILD == '1'
         with:
           name: build-log
           path: build.log
