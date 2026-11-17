@@ -1,5 +1,4 @@
-name: OpenWrt-ImmortalWrt
-
+name: OpenWrt-ImmortalWrt包含ssr
 on:
   schedule:
     - cron: 0 21 * * *
@@ -19,7 +18,6 @@ on:
         required: false
         default: false
         type: boolean
-
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-6.6
   REPO_BRANCH: openwrt-24.10-6.6
@@ -30,10 +28,9 @@ env:
   CACHE_KEY_VER: v1.3
   TZ: Asia/Shanghai
   TARGET_DIR: openwrt/bin/targets/mediatek/filogic
-
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 360
     permissions:
       contents: write
@@ -45,33 +42,24 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
-
       - name: 拉取仓库配置文件
         uses: actions/checkout@v6
-
       - name: 生成编译日期标签
         run: |
           echo "BUILD_TAG=build-$(date +%Y%m%d)_ssr-plus" >> $GITHUB_ENV
           echo "BUILD_DATETIME=$(date +%Y-%m-%d_%H-%M)" >> $GITHUB_ENV
         env:
           TZ: Asia/Shanghai
-
       - name: 安装OpenWrt编译完整依赖
         run: |
           sudo apt update
           sudo apt install -y build-essential libncurses-dev gawk flex bison quilt libssl-dev xsltproc libxml2-utils \
-          zstd device-tree-compiler python3 python3-ply python3-docutils libelf-dev ccache coreutils
-          # 优先GNU install
-          echo "export PATH=/usr/lib/coreutils/bin:$PATH" >> ~/.bashrc
-          source ~/.bashrc
-          install --version
-
+          zstd device-tree-compiler python3 python3-ply python3-docutils libelf-dev ccache
       - name: 清理本地缓存
         if: github.event.inputs.clean_cache == 'true'
         run: |
           rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt plugins_remote.txt plugins_last.txt plugin_changed_list.txt tmp_small_check || true
           echo "✅ 缓存清理完成"
-
       - name: 恢复编译缓存 dl + ccache + 插件哈希快照
         uses: actions/cache@v6
         with:
@@ -83,7 +71,6 @@ jobs:
           key: mt798x-6.6-${{ env.CACHE_KEY_VER }}
           restore-keys: |
             mt798x-6.6-${{ env.CACHE_KEY_VER }}
-
       - name: 校验源码目录
         run: |
           if [ -d openwrt ]; then
@@ -96,7 +83,6 @@ jobs:
               rm -rf openwrt
             fi
           fi
-
       - name: 克隆/更新源码
         run: |
           if [ ! -d openwrt ]; then
@@ -116,21 +102,17 @@ jobs:
           > plugins_remote.txt
           > plugin_changed_list.txt
           NEED_PLUGIN_UPDATE=0
-
           # 插件数组格式：repo;branch;check_type
           # simple: ls‑remote轻量检测；full: clone仓库获取commit
           plugin_list=(
             "https://github.com/vernesong/OpenClash.git;master;simple"
           )
-
           TMP_SMALL="./tmp_small_check"
           rm -rf "${TMP_SMALL}"
-
           for item in "${plugin_list[@]}"; do
             IFS=';' read -r repo_url branch check_type <<< "$item"
             echo "检测仓库: $repo_url 分支:$branch 检测模式:$check_type"
             remote_commit=""
-
             if [[ "$check_type" == "simple" ]]; then
               # 严格仅提取40位Commit Hash，彻底过滤refs/heads/*后缀
               for retry in {1..3}; do
@@ -154,7 +136,6 @@ jobs:
                 sleep 4
               done
             fi
-
             # 网络失败处理逻辑
             if [ -z "$remote_commit" ]; then
               echo "⚠️ 网络获取commit失败: $repo_url $branch"
@@ -171,12 +152,9 @@ jobs:
               echo "🛑 首次拉取网络异常，跳过插件更新检测 $repo_url"
               continue
             fi
-
             echo "${repo_url};${branch};${remote_commit}" >> plugins_remote.txt
           done
-
           rm -rf "${TMP_SMALL}"
-
           # 对比旧快照，查找更新/移除插件
           if [ -f plugins_last.txt ]; then
             while IFS= read -r line; do
@@ -185,7 +163,6 @@ jobs:
                 # 关键修复：自动剔除旧HASH里refs/heads多余字符，只保留哈希
                 old_hash=$(echo "$line" | cut -d';' -f3 | awk '{print $1}')
                 new_line=$(grep "^${repo};${branch};" plugins_remote.txt || true)
-
                 if [ -z "$new_line" ]; then
                     exist_in_list=0
                     for p in "${plugin_list[@]}"; do
@@ -218,7 +195,6 @@ jobs:
                   echo "${repo};${branch};${old_hash}->${new_hash}" >> plugin_changed_list.txt
                 fi
             done < plugins_last.txt
-
             # ========== 已修改部分：新增插件直接触发编译 + 打印hash ==========
             while IFS= read -r line; do
               repo=$(echo "$line"|cut -d';' -f1)
@@ -235,7 +211,6 @@ jobs:
               fi
             done < plugins_remote.txt
             # ==============================================================
-
             if [ $NEED_PLUGIN_UPDATE -eq 0 ]; then
               echo "✅ 所有插件无版本更新"
             fi
@@ -249,15 +224,14 @@ jobs:
             cp plugins_remote.txt plugins_last.txt
             NEED_PLUGIN_UPDATE=0
           fi
-
           echo "NEED_PLUGIN_UPDATE=${NEED_PLUGIN_UPDATE}" >> $GITHUB_ENV
+      # =====================================================
 
       - name: 执行 diy-part1.sh
         run: |
           chmod +x ${{ env.DIY_P1_SH }}
           cd openwrt
           ../${{ env.DIY_P1_SH }}
-
       - name: 导入配置 + 执行 diy-part2.sh
         run: |
           cp ${{ env.CONFIG_FILE }} openwrt/.config
@@ -265,7 +239,6 @@ jobs:
           cd openwrt
           ../${{ env.DIY_P2_SH }}
           make defconfig
-
       - name: 判断是否启动编译
         id: judge_build
         run: |
@@ -275,7 +248,6 @@ jobs:
             echo "⚠️ 手动强制编译开启"
             NEED_BUILD=1
           fi
-
           # 上游源码更新对比
           if [ $NEED_BUILD -eq 0 ] && [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
             if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
@@ -283,13 +255,11 @@ jobs:
               NEED_BUILD=1
             fi
           fi
-
           # 第三方插件更新（读取shell环境变量NEED_PLUGIN_UPDATE）
           if [ $NEED_BUILD -eq 0 ] && [ "${NEED_PLUGIN_UPDATE:-0}" -eq 1 ]; then
             echo "⚠️ 第三方插件存在变更，触发编译"
             NEED_BUILD=1
           fi
-
           # 使用git检测仓库配置文件真实改动，消除defconfig自动变更误判
           if [ $NEED_BUILD -eq 0 ]; then
             if [ ! -f last_commit.txt ]; then
@@ -305,17 +275,27 @@ jobs:
               fi
             fi
           fi
-
           echo "NEED_BUILD=${NEED_BUILD}" >> $GITHUB_ENV
-
       - name: 预下载源码包
         if: env.NEED_BUILD == '1'
         run: |
           cd openwrt
           make defconfig
           find dl -size -1024c -exec rm -f {} \;
-          make download -j$(nproc) || make download -j1 V=s
+          make download -j${{ env.COMPILE_THREAD }} || make download -j1 V=s
           echo "✅ 源码包下载完成"
+
+      # ✅【新增】创建4G SWAP，放在编译之前，只在需要编译时执行
+      - name: 创建4G交换分区，防止OOM内存溢出
+        if: env.NEED_BUILD == '1'
+        run: |
+          sudo swapoff -a || true
+          sudo rm -f /swapfile_openwrt
+          sudo fallocate -l 4G /swapfile_openwrt
+          sudo chmod 600 /swapfile_openwrt
+          sudo mkswap /swapfile_openwrt
+          sudo swapon /swapfile_openwrt
+          free -h
 
       - name: 编译固件
         id: compile_firm
@@ -325,15 +305,17 @@ jobs:
           THREAD=${{ env.COMPILE_THREAD }}
           LOG=${{ github.workspace }}/build.log
           set -o pipefail
-          # xray cgo 放行
+          RESULT="fail"
+          # 关键：放行 xray-core(cronet-go) 的 cgo 非法链接参数 -l:libcronet.a
           export CGO_LDFLAGS_ALLOW='-l:.*'
           export CGO_LDFLAGS_DISALLOW=''
-          RESULT="fail"
           if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
             RESULT="ok"
           else
             echo "❌ 多线程编译失败，切换单线程重试"
             tail -n 300 ${LOG}
+            export CGO_LDFLAGS_ALLOW='-l:.*'
+            export CGO_LDFLAGS_DISALLOW=''
             if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
               RESULT="ok"
             else
@@ -344,13 +326,11 @@ jobs:
           BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')
           echo "result=${RESULT}" >> $GITHUB_OUTPUT
           echo "BOARD=${BOARD}" >> $GITHUB_OUTPUT
-
       - name: 更新缓存快照
         if: steps.compile_firm.outputs.result == 'ok'
         run: |
           cp upstream_commit.txt last_commit.txt
           echo "✅ 快照已更新存入缓存"
-
       - name: 上传插件变更清单
         uses: actions/upload-artifact@v5
         if: always() && env.NEED_BUILD == '1'
@@ -358,7 +338,6 @@ jobs:
           name: plugin-change-log
           path: plugin_changed_list.txt
           retention-days: 7
-
       - name: 上传编译日志
         uses: actions/upload-artifact@v5
         if: always() && env.NEED_BUILD == '1'
@@ -366,7 +345,7 @@ jobs:
           name: build-log
           path: build.log
           retention-days: 7
-
+          if-no-files-found: ignore
       - name: 上传固件文件（Artifact）
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/upload-artifact@v5
@@ -376,7 +355,6 @@ jobs:
             openwrt/bin/targets/**/*.bin
             openwrt/bin/targets/**/*.manifest
           retention-days: 14
-
       - name: 上传完整bin目录到Artifact
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/upload-artifact@v5
@@ -384,7 +362,6 @@ jobs:
           name: All-Bin-Full-Directory
           path: openwrt/bin
           retention-days: 14
-
       - name: Prepare release artifacts（打包固件 + config.buildinfo）
         if: steps.compile_firm.outputs.result == 'ok'
         run: |
@@ -394,7 +371,6 @@ jobs:
           # 复制编译生成的config.buildinfo文件
           cp openwrt/bin/targets/mediatek/filogic/config.buildinfo release_out/
           ls -la release_out
-
       - name: 创建Release发布
         if: steps.compile_firm.outputs.result == 'ok'
         uses: ncipollo/release-action@v1
@@ -406,7 +382,6 @@ jobs:
           artifacts: release_out/*
           generateReleaseNotes: true
           allowUpdates: true
-
       - name: Retain latest 5 releases, remove older releases & tags
         if: steps.compile_firm.outputs.result == 'ok'
         uses: actions/github-script@v8
@@ -415,19 +390,15 @@ jobs:
             const { owner, repo } = context.repo;
             const reserveCount = 5;
             console.log(`设置保留最新 ${reserveCount} 个正式Release`);
-
             const { data: releases } = await github.rest.repos.listReleases({
               owner, repo, per_page: 100
             });
-
             const validReleases = releases
               .filter(item => !item.draft)
               .sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
-
             console.log(`当前正式Release总数：${validReleases.length}`);
             const removeList = validReleases.slice(reserveCount);
             console.log(`待删除数量：${removeList.length}`);
-
             for (const release of removeList) {
               console.log(`开始删除 Release: ${release.tag_name}`);
               await github.rest.repos.deleteRelease({
